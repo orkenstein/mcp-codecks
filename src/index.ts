@@ -1089,24 +1089,24 @@ async function runHTTP() {
 
   const httpSecret = process.env.MCP_HTTP_SECRET;
   if (!httpSecret) {
-    console.error("WARNING: MCP_HTTP_SECRET not set. HTTP endpoint will be unauthenticated!");
-    console.error("Set MCP_HTTP_SECRET environment variable to enable authentication.");
+    console.error("ERROR: MCP_HTTP_SECRET is required for HTTP transport.");
+    console.error("The HTTP endpoint exposes destructive operations and must be authenticated.");
+    console.error("Set MCP_HTTP_SECRET environment variable to a secure secret value.");
+    process.exit(1);
   }
 
   const app = express();
   app.use(express.json());
 
   // Authentication middleware for HTTP transport
-  if (httpSecret) {
-    app.use('/mcp', (req, res, next) => {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || authHeader !== `Bearer ${httpSecret}`) {
-        res.status(401).json({ error: "Unauthorized" });
-        return;
-      }
-      next();
-    });
-  }
+  app.use('/mcp', (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || authHeader !== `Bearer ${httpSecret}`) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    next();
+  });
 
 
   app.post('/mcp', async (req, res) => {

@@ -1,5 +1,9 @@
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export type SchemaCardinality = "one" | "many";
 
@@ -32,15 +36,16 @@ export function loadSchema(): CodecksApiSchema {
     return cachedSchema;
   }
 
+  const projectRoot = path.resolve(__dirname, "../..");
   const preferSource = process.env.NODE_ENV !== "production";
   const candidates = preferSource
     ? [
-        path.join(process.cwd(), "src", "schemas", "codecks-api-schema.json"),
-        path.join(process.cwd(), "dist", "schemas", "codecks-api-schema.json")
+        path.join(projectRoot, "src", "schemas", "codecks-api-schema.json"),
+        path.join(projectRoot, "dist", "schemas", "codecks-api-schema.json")
       ]
     : [
-        path.join(process.cwd(), "dist", "schemas", "codecks-api-schema.json"),
-        path.join(process.cwd(), "src", "schemas", "codecks-api-schema.json")
+        path.join(projectRoot, "dist", "schemas", "codecks-api-schema.json"),
+        path.join(projectRoot, "src", "schemas", "codecks-api-schema.json")
       ];
 
   for (const candidate of candidates) {

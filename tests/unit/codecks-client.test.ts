@@ -1,7 +1,7 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import axios from "axios";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import MockAdapter from "axios-mock-adapter";
-import { CodecksClient, formatError } from "../../src/services/codecks-client.js";
+import axios from "axios";
+import { CodecksClient, handleError, formatError } from "../../src/services/codecks-client.js";
 import { API_BASE_URL } from "../../src/constants.js";
 
 describe("CodecksClient", () => {
@@ -90,21 +90,18 @@ describe("CodecksClient", () => {
   });
 
   it("maps ENOTFOUND errors to connection message", () => {
-    const client = new CodecksClient("token", "subdomain");
     const error = { isAxiosError: true, code: "ENOTFOUND" };
-    const mapped = client.handleError(error);
+    const mapped = handleError(error);
     expect(mapped.message).toContain("Cannot connect to Codecks API");
   });
   it("maps ECONNABORTED errors to timeout message", () => {
-    const client = new CodecksClient("token", "subdomain");
     const error = { isAxiosError: true, code: "ECONNABORTED" };
-    const mapped = client.handleError(error);
+    const mapped = handleError(error);
     expect(mapped.message).toContain("Request timed out");
   });
 
   it("handles non-Axios unknown errors", () => {
-    const client = new CodecksClient("token", "subdomain");
-    const mapped = client.handleError("boom");
+    const mapped = handleError("boom");
     expect(mapped.message).toContain("Unexpected error: boom");
   });
 
@@ -135,9 +132,8 @@ describe("CodecksClient", () => {
   });
 
   it("returns error instance for non-Axios errors", () => {
-    const client = new CodecksClient("token", "subdomain");
     const error = new Error("plain");
-    const mapped = client.handleError(error);
+    const mapped = handleError(error);
     expect(mapped).toBe(error);
   });
 

@@ -42,6 +42,6 @@ export default [
     }
   },
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '*.js', '*.mjs', '*.cjs']
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'scripts/**/*.js', 'scripts/**/*.mjs']
   }
 ];
