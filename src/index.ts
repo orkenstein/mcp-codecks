@@ -147,29 +147,29 @@ Error Handling:
       }
 
       const cardSelection: Selection[] = [
-        \"id\",
-        \"accountSeq\",
-        \"title\",
-        \"content\",
-        \"derivedStatus\",
-        \"effort\",
-        \"priority\",
-        { assignee: [\"id\", \"name\"] },
-        { deck: [\"id\", \"name\"] },
-        { milestone: [\"id\", \"name\"] },
-        \"createdAt\",
-        \"lastUpdatedAt\"
+        "id",
+        "accountSeq",
+        "title",
+        "content",
+        "derivedStatus",
+        "effort",
+        "priority",
+        { assignee: ["id", "name"] },
+        { deck: ["id", "name"] },
+        { milestone: ["id", "name"] },
+        "createdAt",
+        "lastUpdatedAt"
       ];
 
-      const cardsKey = buildRelationKey(\"cards\", {
+      const cardsKey = buildRelationKey("cards", {
         ...filters,
-        $order: \"-lastUpdatedAt\",
+        $order: "-lastUpdatedAt",
         $limit: params.limit,
         $offset: params.offset
       });
 
       const accountSelection: Selection[] = [{ [cardsKey]: cardSelection }];
-      validateSelection(schema, \"account\", accountSelection);
+      validateSelection(schema, "account", accountSelection);
 
       const query = {
         _root: [
@@ -180,7 +180,7 @@ Error Handling:
       };
 
       const response = await client.query(query);
-      const account = denormalizeRootRelation(schema, response as Record<string, any>, \"account\", accountSelection);
+      const account = denormalizeRootRelation(schema, response as Record<string, any>, "account", accountSelection);
       const cards = account?.cards || [];
 
       // Calculate pagination metadata
@@ -240,26 +240,26 @@ Error Handling:
       const client = getClient();
 
       const cardSelection: Selection[] = [
-        \"id\",
-        \"accountSeq\",
-        \"title\",
-        \"content\",
-        \"derivedStatus\",
-        \"effort\",
-        \"priority\",
-        { assignee: [\"id\", \"name\"] },
-        { deck: [\"id\", \"name\"] },
-        { milestone: [\"id\", \"name\", \"dueDate\"] },
-        \"createdAt\",
-        \"lastUpdatedAt\"
+        "id",
+        "accountSeq",
+        "title",
+        "content",
+        "derivedStatus",
+        "effort",
+        "priority",
+        { assignee: ["id", "name"] },
+        { deck: ["id", "name"] },
+        { milestone: ["id", "name", "dueDate"] },
+        "createdAt",
+        "lastUpdatedAt"
       ];
 
-      const query = buildIdQuery(schema, \"card\", params.card_id, cardSelection);
+      const query = buildIdQuery(schema, "card", params.card_id, cardSelection);
       const response = await client.query(query);
       const card = denormalizeById(
         schema,
         response as Record<string, any>,
-        \"card\",
+        "card",
         params.card_id,
         cardSelection
       );
@@ -459,19 +459,19 @@ Examples:
       }
 
       const deckSelection: Selection[] = [
-        \"id\",
-        \"name\",
-        \"type\",
-        { project: [\"id\", \"name\"] }
+        "id",
+        "name",
+        "type",
+        { project: ["id", "name"] }
       ];
 
       const decksKey = buildRelationKey(
-        \"decks\",
+        "decks",
         Object.keys(filters).length > 0 ? filters : undefined
       );
 
       const accountSelection: Selection[] = [{ [decksKey]: deckSelection }];
-      validateSelection(schema, \"account\", accountSelection);
+      validateSelection(schema, "account", accountSelection);
 
       const query = {
         _root: [
@@ -482,7 +482,7 @@ Examples:
       };
 
       const response = await client.query(query);
-      const account = denormalizeRootRelation(schema, response as Record<string, any>, \"account\", accountSelection);
+      const account = denormalizeRootRelation(schema, response as Record<string, any>, "account", accountSelection);
       const decks = account?.decks || [];
 
       const formatted = format.formatDeckList(decks, params.response_format);
@@ -702,9 +702,9 @@ Returns:
     try {
       const client = getClient();
 
-      const projectSelection: Selection[] = [\"id\", \"name\", \"isArchived\"];
+      const projectSelection: Selection[] = ["id", "name", "isArchived"];
       const accountSelection: Selection[] = [{ anyProjects: projectSelection }];
-      validateSelection(schema, \"account\", accountSelection);
+      validateSelection(schema, "account", accountSelection);
 
       const query = {
         _root: [
@@ -715,7 +715,7 @@ Returns:
       };
 
       const response = await client.query(query);
-      const account = denormalizeRootRelation(schema, response as Record<string, any>, \"account\", accountSelection);
+      const account = denormalizeRootRelation(schema, response as Record<string, any>, "account", accountSelection);
       let projects = account?.anyProjects || [];
 
       if (!params.include_archived) {
@@ -864,9 +864,9 @@ Returns:
     try {
       const client = getClient();
 
-      const milestoneSelection: Selection[] = [\"id\", \"name\", \"dueDate\", \"description\"];
+      const milestoneSelection: Selection[] = ["id", "name", "dueDate", "description"];
       const accountSelection: Selection[] = [{ milestones: milestoneSelection }];
-      validateSelection(schema, \"account\", accountSelection);
+      validateSelection(schema, "account", accountSelection);
 
       const query = {
         _root: [
@@ -877,7 +877,7 @@ Returns:
       };
 
       const response = await client.query(query);
-      const account = denormalizeRootRelation(schema, response as Record<string, any>, \"account\", accountSelection);
+      const account = denormalizeRootRelation(schema, response as Record<string, any>, "account", accountSelection);
       const milestones = account?.milestones || [];
 
       const formatted = format.formatMilestoneList(milestones, params.response_format);
@@ -993,17 +993,17 @@ Returns:
       const client = getClient();
 
       const userSelection: Selection[] = [
-        \"id\",
-        \"name\",
-        { primaryEmail: [\"id\", \"email\", \"isPrimary\", \"isVerified\", \"userId\"] }
+        "id",
+        "name",
+        { primaryEmail: ["id", "email", "isPrimary", "isVerified", "userId"] }
       ];
 
-      const query = buildRootQuery(schema, \"loggedInUser\", userSelection);
+      const query = buildRootQuery(schema, "loggedInUser", userSelection);
       const response = await client.query(query);
       const user = denormalizeRootRelation(
         schema,
         response as Record<string, any>,
-        \"loggedInUser\",
+        "loggedInUser",
         userSelection
       );
 

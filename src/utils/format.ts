@@ -2,7 +2,7 @@
  * Formatting utilities for responses
  */
 
-import { ResponseFormat, CodecksCard, CodecksDeck, CodecksProject, CodecksMilestone } from "../types.js";
+import { ResponseFormat } from "../types.js";
 import { CHARACTER_LIMIT } from "../constants.js";
 
 /**
