@@ -23,6 +23,9 @@ export interface CodecksApiSchema {
 }
 
 let cachedSchema: CodecksApiSchema | null = null;
+export function resetSchemaCache() {
+  cachedSchema = null;
+}
 
 export function loadSchema(): CodecksApiSchema {
   if (cachedSchema) {

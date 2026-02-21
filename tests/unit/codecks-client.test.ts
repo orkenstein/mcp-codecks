@@ -62,6 +62,15 @@ describe("CodecksClient", () => {
     );
   });
 
+  it("maps 403 errors to permission denied", async () => {
+    const client = new CodecksClient("token", "subdomain");
+    mock.onPost(API_BASE_URL).reply(403, { message: "forbidden" });
+
+    await expect(client.query({})).rejects.toThrow(
+      "Permission denied. You don't have access to this resource."
+    );
+  });
+
   it("maps 429 errors to rate limit message", async () => {
     const client = new CodecksClient("token", "subdomain");
     mock.onPost(API_BASE_URL).reply(429, { message: "rate limit" });
@@ -78,6 +87,58 @@ describe("CodecksClient", () => {
     await expect(client.query({})).rejects.toThrow(
       "Request timed out. The Codecks API may be slow or unavailable."
     );
+  });
+
+  it("maps ENOTFOUND errors to connection message", () => {
+    const client = new CodecksClient("token", "subdomain") as any;
+    const error = { isAxiosError: true, code: "ENOTFOUND" };
+    const mapped = client.handleError(error);
+    expect(mapped.message).toContain("Cannot connect to Codecks API");
+  });
+  it("maps ECONNABORTED errors to timeout message", () => {
+    const client = new CodecksClient("token", "subdomain") as any;
+    const error = { isAxiosError: true, code: "ECONNABORTED" };
+    const mapped = client.handleError(error);
+    expect(mapped.message).toContain("Request timed out");
+  });
+
+  it("handles non-Axios unknown errors", () => {
+    const client = new CodecksClient("token", "subdomain") as any;
+    const mapped = client.handleError("boom");
+    expect(mapped.message).toContain("Unexpected error: boom");
+  });
+
+  it("maps default error status with message", async () => {
+    const client = new CodecksClient("token", "subdomain");
+    mock.onPost(API_BASE_URL).reply(500, { message: "boom" });
+
+    await expect(client.query({})).rejects.toThrow(
+      "API request failed with status 500: boom"
+    );
+  });
+  it("maps default error status without message to axios error text", async () => {
+    const client = new CodecksClient("token", "subdomain");
+    mock.onPost(API_BASE_URL).reply(500, {});
+
+    await expect(client.query({})).rejects.toThrow(
+      "API request failed with status 500: Request failed with status code 500"
+    );
+  });
+
+  it("maps dispatch errors through handleError", async () => {
+    const client = new CodecksClient("token", "subdomain");
+    mock.onPost(`${API_BASE_URL}/dispatch/cards/create`).reply(404, { message: "missing" });
+
+    await expect(client.dispatch("cards/create", {})).rejects.toThrow(
+      "Resource not found. Please verify the ID or parameters."
+    );
+  });
+
+  it("returns error instance for non-Axios errors", () => {
+    const client = new CodecksClient("token", "subdomain") as any;
+    const error = new Error("plain");
+    const mapped = client.handleError(error);
+    expect(mapped).toBe(error);
   });
 
   it("formats errors for user display", () => {
