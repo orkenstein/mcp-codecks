@@ -25,6 +25,7 @@ import {
   validateSelection,
   type Selection
 } from "./utils/query-builder.js";
+import { registerAutoTools } from "./utils/auto-tools.js";
 
 // Initialize MCP server
 const server = new McpServer({
@@ -33,6 +34,22 @@ const server = new McpServer({
 });
 
 const schema = loadSchema();
+const manualTools = new Set<string>([
+  "codecks_list_cards",
+  "codecks_get_card",
+  "codecks_create_card",
+  "codecks_bulk_update_cards",
+  "codecks_list_decks",
+  "codecks_get_deck",
+  "codecks_create_deck",
+  "codecks_add_decks_to_space_after",
+  "codecks_list_projects",
+  "codecks_create_project",
+  "codecks_set_project_visibility",
+  "codecks_list_milestones",
+  "codecks_get_milestone",
+  "codecks_get_current_user"
+]);
 
 // Initialize Codecks client
 let client: CodecksClient;
@@ -1033,6 +1050,18 @@ Returns:
     }
   }
 );
+
+// ============================================================================
+// AUTO-GENERATED TOOLS
+// ============================================================================
+registerAutoTools({
+  server,
+  schema,
+  getClient,
+  formatError,
+  skipModels: new Set(["card", "deck", "project", "milestone"]),
+  existingToolNames: manualTools
+});
 
 // ============================================================================
 // Transport Setup

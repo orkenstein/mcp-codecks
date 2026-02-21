@@ -79,6 +79,10 @@ npm run dev
 
 ## Available Tools
 
+In addition to the curated tools below, the server auto-generates `codecks_list_<model>` and
+`codecks_get_<model>` tools for most models defined in `docs/codecks-api/api-reference.md`.
+Tool names use snake_case model names (e.g., `codecks_list_account_user_setting`).
+
 ### Card Operations
 
 - `codecks_list_cards` - List cards with filtering by deck, milestone, assignee, status, or search term
