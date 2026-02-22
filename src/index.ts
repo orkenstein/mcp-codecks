@@ -189,6 +189,8 @@ Error Handling:
       const cards = account?.cards || [];
 
       // Calculate pagination metadata
+      // Note: has_more is a heuristic based on result count. If total items is
+      // exactly a multiple of limit, this may return true on the last page.
       const meta = {
         count: cards.length,
         offset: params.offset,

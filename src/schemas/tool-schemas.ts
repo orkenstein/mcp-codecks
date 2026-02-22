@@ -71,7 +71,13 @@ export const CreateCardSchema = z.object({
   fake_cover_file_id: z.string().optional().describe("Fake cover file ID"),
   session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage"),
   master_tags: z.array(z.string()).optional().describe("Tag IDs to assign to card"),
-  attachments: z.array(z.any()).optional().describe("Attachment objects to include"),
+  attachments: z.array(
+    z.object({
+      fileId: z.string().optional(),
+      url: z.string().optional(),
+      filename: z.string().optional()
+    }).passthrough()
+  ).optional().describe("Attachment objects to include"),
   child_cards: z.array(z.string()).optional().describe("Child card IDs"),
   in_deps: z.array(z.string()).optional().describe("Inbound dependency card IDs"),
   out_deps: z.array(z.string()).optional().describe("Outbound dependency card IDs"),

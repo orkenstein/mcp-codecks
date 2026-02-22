@@ -72,7 +72,7 @@ describe("CodecksClient", () => {
   });
 
   it("maps 429 errors to rate limit message", async () => {
-    const client = new CodecksClient("token", "subdomain");
+    const client = new CodecksClient("token", "subdomain", { maxRetries: 0 });
     mock.onPost(API_BASE_URL).reply(429, { message: "rate limit" });
 
     await expect(client.query({})).rejects.toThrow(

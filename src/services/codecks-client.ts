@@ -60,17 +60,25 @@ export function handleError(error: unknown): Error {
 export class CodecksClient {
   private authToken: string;
   private accountSubdomain: string;
+  private maxRetries: number;
+  private retryDelay: number;
 
-  constructor(authToken: string, accountSubdomain: string) {
+  constructor(
+    authToken: string,
+    accountSubdomain: string,
+    options?: { maxRetries?: number; retryDelay?: number }
+  ) {
     this.authToken = authToken;
     this.accountSubdomain = accountSubdomain;
+    this.maxRetries = options?.maxRetries ?? 3;
+    this.retryDelay = options?.retryDelay ?? 1000;
   }
 
   /**
-   * Execute a GraphQL-like query against the Codecks API
+   * Execute a GraphQL-like query against the Codecks API with automatic retry on 429
    */
   async query<T = any>(query: Record<string, any>): Promise<T> {
-    try {
+    return this.executeWithRetry(async () => {
       const response = await axios.post(
         API_BASE_URL,
         { query },
@@ -85,19 +93,17 @@ export class CodecksClient {
         }
       );
       return response.data;
-    } catch (error) {
-      throw handleError(error);
-    }
+    });
   }
 
   /**
-   * Execute a dispatch (mutation) operation
+   * Execute a dispatch (mutation) operation with automatic retry on 429
    */
   async dispatch<T = any>(
     endpoint: string,
     data: Record<string, any>
   ): Promise<T> {
-    try {
+    return this.executeWithRetry(async () => {
       const response = await axios.post(
         `${API_BASE_URL}/dispatch/${endpoint}`,
         data,
@@ -112,9 +118,32 @@ export class CodecksClient {
         }
       );
       return response.data;
-    } catch (error) {
-      throw handleError(error);
+    });
+  }
+
+  /**
+   * Execute a request with exponential backoff retry for 429 rate limits
+   */
+  private async executeWithRetry<T>(fn: () => Promise<T>): Promise<T> {
+    let lastError: Error | undefined;
+    
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        if (axios.isAxiosError(error) && error.response?.status === 429) {
+          if (attempt < this.maxRetries) {
+            const delay = this.retryDelay * Math.pow(2, attempt);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+        }
+        lastError = handleError(error);
+        throw lastError;
+      }
     }
+    
+    throw lastError || new Error("Max retries exceeded");
   }
 
 }

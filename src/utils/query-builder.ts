@@ -116,6 +116,15 @@ export function buildRootQuery(
   };
 }
 
+/**
+ * Build an ID-based query for direct model lookups.
+ * 
+ * Uses Codecks' direct ID lookup syntax: { "model(id)": [...fields] }
+ * This differs from the _root pattern used elsewhere because it queries
+ * a specific entity by ID rather than filtering a relation.
+ * 
+ * @see https://docs.codecks.io/api/ - Codecks API Reference (ID-based queries)
+ */
 export function buildIdQuery(
   schema: CodecksApiSchema,
   modelName: string,
@@ -251,6 +260,9 @@ export function denormalizeById(
   id: string,
   selection: Selection[]
 ): any {
+  // Fallback path: handles edge case where response[modelName] is a direct object
+  // with the requested ID instead of the normal normalized dictionary format.
+  // This occurs with certain Codecks API responses that return single entities.
   const direct = response?.[modelName];
   if (direct && typeof direct === "object" && !Array.isArray(direct) && direct.id === id) {
     return direct;
