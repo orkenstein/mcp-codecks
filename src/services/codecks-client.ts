@@ -15,7 +15,8 @@ export function handleError(error: unknown): Error {
     
     if (axiosError.response) {
       const status = axiosError.response.status;
-      const data = axiosError.response.data as any;
+      const data = axiosError.response.data as Record<string, unknown>;
+      const message = typeof data?.message === 'string' ? data.message : axiosError.message;
       
       switch (status) {
         case 401:
@@ -36,9 +37,7 @@ export function handleError(error: unknown): Error {
           );
         default:
           return new Error(
-            `API request failed with status ${status}: ${
-              data?.message || axiosError.message
-            }`
+            `API request failed with status ${status}: ${message}`
           );
       }
     } else if (axiosError.code === "ECONNABORTED") {
@@ -125,8 +124,6 @@ export class CodecksClient {
    * Execute a request with exponential backoff retry for 429 rate limits
    */
   private async executeWithRetry<T>(fn: () => Promise<T>): Promise<T> {
-    let lastError: Error | undefined;
-    
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
         return await fn();
@@ -138,12 +135,9 @@ export class CodecksClient {
             continue;
           }
         }
-        lastError = handleError(error);
-        throw lastError;
+        throw handleError(error);
       }
     }
-    
-    throw lastError || new Error("Max retries exceeded");
   }
 
 }

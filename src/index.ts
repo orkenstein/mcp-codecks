@@ -72,6 +72,9 @@ const manualTools = new Set<string>([
 let client: CodecksClient;
 
 function getClient(): CodecksClient {
+  if (!client) {
+    throw new Error("CodecksClient not initialized. Ensure runStdio() or runHTTP() has been called.");
+  }
   return client;
 }
 

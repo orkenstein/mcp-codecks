@@ -1,5 +1,6 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, vi } from "vitest";
 import { loadSchema, resetSchemaCache } from "../../src/utils/schema.js";
+import fs from "fs";
 
 describe("schema loader", () => {
   const originalEnv = process.env.NODE_ENV;
@@ -30,5 +31,14 @@ describe("schema loader", () => {
     const schema = loadSchema();
     expect(schema).toBeDefined();
     expect(schema.models).toBeDefined();
+  });
+
+  it("throws error when schema file is missing", () => {
+    resetSchemaCache();
+    const existsSyncSpy = vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    
+    expect(() => loadSchema()).toThrow(/schema not found/i);
+    
+    existsSyncSpy.mockRestore();
   });
 });
