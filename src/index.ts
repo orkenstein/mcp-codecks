@@ -699,7 +699,7 @@ Args:
   - response_format ('markdown' | 'json'): Output format (default: 'markdown')
 
 Returns:
-  List of projects with their IDs, names, and archived status.`,
+  List of projects with their IDs, names, and visibility status (default, archived, deleted, etc.).`,
     inputSchema: schemas.ListProjectsSchema,
     annotations: {
       readOnlyHint: true,
@@ -712,19 +712,15 @@ Returns:
     try {
       const client = getClient();
 
-      const projectSelection: Selection[] = ["id", "name", "isArchived"];
+      const projectSelection: Selection[] = ["id", "name", "visibility"];
       // Use server-side filtering: 'projects' excludes archived, 'anyProjects' includes all
       const projectRelation = params.include_archived ? "anyProjects" : "projects";
-      const accountSelection: Selection[] = [{ [projectRelation]: projectSelection }];
+      const accountSelection: Selection[] = [
+        { [projectRelation]: projectSelection }
+      ];
       validateSelection(schema, "account", accountSelection);
 
-      const query = {
-        _root: [
-          {
-            account: accountSelection
-          }
-        ]
-      };
+      const query = buildRootQuery(schema, "account", accountSelection);
 
       const response = await client.query(query);
       const account = denormalizeRootRelation(schema, response as Record<string, any>, "account", accountSelection);
