@@ -156,11 +156,20 @@ export function registerAutoTools(options: RegisterAutoToolsOptions) {
     const getTool = `codecks_get_${snake}`;
 
     if (!existingToolNames.has(listTool)) {
+      const model = schema.models[modelName];
+      const fields = Object.keys(model.fields || {});
+      const relations = Object.keys(model.relations || {});
+      const availableFields = [...fields.slice(0, 8), ...(fields.length > 8 ? ["..."] : [])];
+      const fieldsDesc = availableFields.length > 0 ? `\n\nAvailable fields: ${availableFields.join(", ")}` : "";
+      const relationsDesc = relations.length > 0 ? `\nRelations: ${relations.slice(0, 5).join(", ")}${relations.length > 5 ? ", ..." : ""}` : "";
+      const exampleField = fields[1] || "fieldName";
+      const filterExample = fields.includes("id") ? `\n\nExample filters: {"${exampleField}": "value"}` : "";
+      
       server.registerTool(
         listTool,
         {
           title: `List ${modelName}`,
-          description: `Auto-generated list tool for ${modelName}.\n\nUse filters/selection to shape results.`,
+          description: `List ${modelName} items with optional filters and selection.${fieldsDesc}${relationsDesc}${filterExample}`,
           inputSchema: AutoListSchema,
           annotations: {
             readOnlyHint: true,

@@ -43,7 +43,7 @@ export const BulkUpdateCardsSchema = z.object({
   status: z.enum(["unassigned", "assigned", "started", "review", "blocked", "done"]).optional()
     .describe("Updated workflow status"),
   deck_id: z.string().optional().describe("Move cards to the specified deck ID"),
-  session_id: z.string().optional().describe("Client session ID from web app")
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
 }).strict().refine(
   (value) => Boolean(value.status || value.deck_id),
   { message: "Provide at least one of status or deck_id." }
@@ -69,7 +69,7 @@ export const CreateCardSchema = z.object({
   is_doc: z.boolean().default(false).describe("Create card as a doc card"),
   parent_card_id: z.string().optional().describe("Parent card ID"),
   fake_cover_file_id: z.string().optional().describe("Fake cover file ID"),
-  session_id: z.string().optional().describe("Client session ID from web app"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage"),
   master_tags: z.array(z.string()).optional().describe("Tag IDs to assign to card"),
   attachments: z.array(z.any()).optional().describe("Attachment objects to include"),
   child_cards: z.array(z.string()).optional().describe("Child card IDs"),
@@ -96,7 +96,7 @@ export const CreateDeckSchema = z.object({
   user_id: z.string().describe("Your user ID"),
   space_id: z.number().int().describe("Space ID"),
   cover_file_data: z.any().optional().describe("Cover file metadata (optional)"),
-  session_id: z.string().optional().describe("Client session ID from web app")
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
 }).strict();
 
 export const AddDecksToSpaceAfterSchema = z.object({
@@ -104,7 +104,7 @@ export const AddDecksToSpaceAfterSchema = z.object({
   target_id: z.string().describe("Target deck ID to insert after"),
   target_project_id: z.string().describe("Target project ID"),
   target_space_id: z.number().int().describe("Target space ID"),
-  session_id: z.string().optional().describe("Client session ID from web app")
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
 }).strict();
 
 // Project schemas
@@ -119,14 +119,14 @@ export const CreateProjectSchema = z.object({
     .describe("Default user access level"),
   template_id: z.string().optional().describe("Template ID (e.g., cdx/survival)"),
   file_id: z.string().optional().describe("Cover file ID"),
-  session_id: z.string().optional().describe("Client session ID from web app")
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
 }).strict();
 
 export const SetProjectVisibilitySchema = z.object({
   project_id: z.string().describe("Project ID"),
   visibility: z.enum(["deleted", "archived", "private", "public"]).default("deleted")
     .describe("Visibility to set (use 'deleted' to remove)"),
-  session_id: z.string().optional().describe("Client session ID from web app")
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
 }).strict();
 
 // Milestone schemas
