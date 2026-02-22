@@ -1,0 +1,594 @@
+openapi: 3.0.3
+info:
+  title: Codecks API
+  version: 1.0.0-beta
+  description: |
+    Codecks API enables programmatic access to your game development project management.
+    
+    The API uses a GraphQL-like query structure for reads and REST-style dispatch endpoints for writes.
+    
+    **Authentication:**
+    - Extract your access token from the `at` cookie when logged into codecks.io
+    - Token allows full impersonation - handle with care
+    
+    **Rate Limits:**
+    - 40 requests per 5 seconds per IP address
+    
+  contact:
+    email: hello@codecks.io
+    url: https://www.codecks.io/community/
+  
+servers:
+  - url: https://api.codecks.io
+    description: Production API
+
+security:
+  - CodecksAuth: []
+
+tags:
+  - name: query
+    description: Read operations using GraphQL-like queries
+  - name: cards
+    description: Card creation and management
+  - name: decks
+    description: Deck operations
+  - name: projects
+    description: Project management
+  - name: milestones
+    description: Milestone operations
+  - name: files
+    description: File upload and attachment
+
+paths:
+  /:
+    post:
+      tags:
+        - query
+      summary: Execute GraphQL-like query
+      description: |
+        Main query endpoint for reading data. Uses a nested GraphQL-like structure.
+        
+        **Common patterns:**
+        - Access via root: `{"_root": [{"account": [...]}]}`
+        - Direct ID lookup: `{"card(\"id\")": [...]}`
+        - Filtering: `cards({"deckId": 123})`
+        - Ordering: `cards({"$order": "createdAt"})`
+        - Pagination: `cards({"$limit": 10, "$offset": 0})`
+        
+      operationId: executeQuery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - query
+              properties:
+                query:
+                  type: object
+                  description: Nested query structure
+                  example:
+                    _root:
+                      - account:
+                          - cards:
+                              - "id"
+                              - "title"
+                              - "derivedStatus"
+            examples:
+              listCards:
+                summary: List all cards
+                value:
+                  query:
+                    _root:
+                      - account:
+                          - cards:
+                              - "id"
+                              - "title"
+                              - "derivedStatus"
+              
+              getCardById:
+                summary: Get card by ID
+                value:
+                  query:
+                    "card(\"abc123\")":
+                      - "id"
+                      - "title"
+                      - "content"
+                      - "derivedStatus"
+              
+              filterCards:
+                summary: Filter cards by deck
+                value:
+                  query:
+                    _root:
+                      - account:
+                          - "cards({\"deckId\": 123, \"$order\": \"createdAt\", \"$limit\": 10})":
+                              - "id"
+                              - "title"
+      
+      responses:
+        '200':
+          description: Query successful
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Normalized response with entities keyed by type and ID
+                example:
+                  card:
+                    abc123:
+                      id: "abc123"
+                      title: "Example Card"
+                      derivedStatus: "done"
+        
+        '401':
+          description: Authentication failed
+        
+        '429':
+          description: Rate limit exceeded (40 req/5sec)
+
+  /dispatch/cards/create:
+    post:
+      tags:
+        - cards
+      summary: Create a new card
+      operationId: createCard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+                - userId
+              properties:
+                content:
+                  type: string
+                  description: Card content (first line becomes title)
+                userId:
+                  type: string
+                  description: Your user ID
+                assigneeId:
+                  type: string
+                  nullable: true
+                  description: User ID to assign card to
+                deckId:
+                  type: string
+                  nullable: true
+                  description: Deck to place card in
+                milestoneId:
+                  type: string
+                  nullable: true
+                  description: Milestone to assign card to
+                sprintId:
+                  type: string
+                  nullable: true
+                effort:
+                  type: integer
+                  nullable: true
+                  description: Effort points
+                priority:
+                  type: string
+                  enum: [a, b, c]
+                  nullable: true
+                  description: Priority (a=high, b=medium, c=low)
+                putOnHand:
+                  type: boolean
+                  default: false
+                  description: Add card to your hand
+                putInQueue:
+                  type: boolean
+                  default: false
+                subscribeCreator:
+                  type: boolean
+                  default: false
+                addAsBookmark:
+                  type: boolean
+                  default: false
+                isDoc:
+                  type: boolean
+                  default: false
+                parentCardId:
+                  type: string
+                  nullable: true
+                masterTags:
+                  type: array
+                  items:
+                    type: string
+                  default: []
+                attachments:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      fileId:
+                        type: string
+                      url:
+                        type: string
+                      filename:
+                        type: string
+                  default: []
+                childCards:
+                  type: array
+                  items:
+                    type: string
+                  default: []
+                inDeps:
+                  type: array
+                  items:
+                    type: string
+                  default: []
+                  description: Inbound dependency card IDs
+                outDeps:
+                  type: array
+                  items:
+                    type: string
+                  default: []
+                  description: Outbound dependency card IDs
+                sessionId:
+                  type: string
+                  description: Client session ID (optional)
+      
+      responses:
+        '200':
+          description: Card created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cardId:
+                    type: string
+                  id:
+                    type: string
+
+  /dispatch/cards/bulkUpdate:
+    post:
+      tags:
+        - cards
+      summary: Bulk update multiple cards
+      operationId: bulkUpdateCards
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ids
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: string
+                  description: Card IDs to update
+                status:
+                  type: string
+                  enum: [unassigned, assigned, started, review, blocked, done]
+                  description: New workflow status
+                deckId:
+                  type: string
+                  description: Move cards to this deck
+                sessionId:
+                  type: string
+      
+      responses:
+        '200':
+          description: Cards updated successfully
+
+  /dispatch/cards/addFile:
+    post:
+      tags:
+        - files
+      summary: Attach file to card
+      description: Add a previously uploaded file to a card
+      operationId: addFileToCard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - cardId
+                - userId
+                - fileData
+              properties:
+                cardId:
+                  type: string
+                userId:
+                  type: string
+                fileData:
+                  type: object
+                  required:
+                    - fileName
+                    - url
+                    - size
+                    - type
+                  properties:
+                    fileName:
+                      type: string
+                    url:
+                      type: string
+                      description: Public URL from S3 upload
+                    size:
+                      type: integer
+                      description: File size in bytes
+                    type:
+                      type: string
+                      description: MIME type
+      
+      responses:
+        '200':
+          description: File attached successfully
+
+  /dispatch/decks/create:
+    post:
+      tags:
+        - decks
+      summary: Create a new deck
+      operationId: createDeck
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - projectId
+                - userId
+                - spaceId
+              properties:
+                title:
+                  type: string
+                projectId:
+                  type: string
+                userId:
+                  type: string
+                spaceId:
+                  type: integer
+                coverFileData:
+                  type: object
+                  nullable: true
+                sessionId:
+                  type: string
+      
+      responses:
+        '200':
+          description: Deck created successfully
+
+  /dispatch/decks/addToSpaceAfter:
+    post:
+      tags:
+        - decks
+      summary: Reorder decks in a space
+      operationId: reorderDecks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - deckIds
+                - targetId
+                - targetProjectId
+                - targetSpaceId
+              properties:
+                deckIds:
+                  type: array
+                  items:
+                    type: string
+                targetId:
+                  type: string
+                  description: Target deck ID to insert after
+                targetProjectId:
+                  type: string
+                targetSpaceId:
+                  type: integer
+                sessionId:
+                  type: string
+      
+      responses:
+        '200':
+          description: Decks reordered successfully
+
+  /dispatch/projects/create:
+    post:
+      tags:
+        - projects
+      summary: Create a new project
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                defaultUserAccess:
+                  type: string
+                  enum: [everyone, onlyMembers]
+                  default: everyone
+                templateId:
+                  type: string
+                  nullable: true
+                  description: Template ID (e.g., cdx/survival)
+                fileId:
+                  type: string
+                  nullable: true
+                  description: Cover file ID
+                sessionId:
+                  type: string
+      
+      responses:
+        '200':
+          description: Project created successfully
+
+  /dispatch/projects/setVisibility:
+    post:
+      tags:
+        - projects
+      summary: Set project visibility
+      description: Update project visibility including deletion/archival
+      operationId: setProjectVisibility
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+              properties:
+                id:
+                  type: string
+                  description: Project ID
+                visibility:
+                  type: string
+                  enum: [deleted, archived, private, public]
+                  default: deleted
+                sessionId:
+                  type: string
+      
+      responses:
+        '200':
+          description: Visibility updated successfully
+
+  /s3/sign:
+    get:
+      tags:
+        - files
+      summary: Get S3 upload signature
+      description: Request signed URL for uploading files to S3
+      operationId: getS3UploadSignature
+      parameters:
+        - name: objectName
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Filename to upload
+      
+      responses:
+        '200':
+          description: Signed upload details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  signedUrl:
+                    type: string
+                    description: S3 POST endpoint
+                  publicUrl:
+                    type: string
+                    description: Public URL after upload
+                  fields:
+                    type: object
+                    description: Form fields for S3 upload
+
+components:
+  securitySchemes:
+    CodecksAuth:
+      type: apiKey
+      in: header
+      name: X-Auth-Token
+      description: |
+        Authentication token extracted from `at` cookie.
+        Also requires X-Account header with organization subdomain.
+  
+  parameters:
+    AccountHeader:
+      name: X-Account
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Organization subdomain (e.g., 'team123' for team123.codecks.io)
+  
+  schemas:
+    Card:
+      type: object
+      properties:
+        id:
+          type: string
+        accountSeq:
+          type: integer
+          description: Sequential card number in account
+        title:
+          type: string
+        content:
+          type: string
+        derivedStatus:
+          type: string
+          enum: [unassigned, assigned, started, review, blocked, done]
+        effort:
+          type: integer
+        priority:
+          type: string
+          enum: [a, b, c]
+        createdAt:
+          type: string
+          format: date-time
+        lastUpdatedAt:
+          type: string
+          format: date-time
+    
+    Deck:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        isArchived:
+          type: boolean
+    
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        isArchived:
+          type: boolean
+    
+    Milestone:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        dueDate:
+          type: string
+          format: date
+        description:
+          type: string
+    
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+    
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
