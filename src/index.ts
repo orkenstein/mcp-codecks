@@ -154,17 +154,17 @@ Error Handling:
         filters.content = { op: "search", value: params.search };
       }
 
+      // Note: 'cardId' is automatically included in response
+      // Cannot request 'id' field - causes 500 error
       const cardSelection: Selection[] = [
-        "id",
         "accountSeq",
         "title",
         "content",
         "derivedStatus",
         "effort",
         "priority",
-        { assignee: ["id", "name"] },
-        { deck: ["id", "name"] },
-        { milestone: ["id", "name"] },
+        "deckId",
+        "milestoneId",
         "createdAt",
         "lastUpdatedAt"
       ];
@@ -241,17 +241,17 @@ Error Handling:
     try {
       const client = getClient();
 
+      // Note: 'cardId' is automatically included in response
       const cardSelection: Selection[] = [
-        "id",
         "accountSeq",
         "title",
         "content",
         "derivedStatus",
         "effort",
         "priority",
-        { assignee: ["id", "name"] },
-        { deck: ["id", "name"] },
-        { milestone: ["id", "name", "dueDate"] },
+        "deckId",
+        "milestoneId",
+        "sprintId",
         "createdAt",
         "lastUpdatedAt"
       ];
@@ -460,11 +460,12 @@ Examples:
         filters.projectId = params.project_id;
       }
 
+      // Note: 'id' is automatically included in response, cannot be requested
+      // Fields 'name' and 'type' cause 500 errors - not available in API
       const deckSelection: Selection[] = [
-        "id",
-        "name",
-        "type",
-        { project: ["id", "name"] }
+        "accountSeq",
+        "description",
+        "createdAt"
       ];
 
       const decksKey = buildRelationKey(
@@ -522,13 +523,12 @@ Returns:
     try {
       const client = getClient();
 
+      // Note: 'id' is automatically included in response, cannot be requested
       const deckSelection: Selection[] = [
-        "id",
-        "name",
-        "type",
+        "accountSeq",
         "description",
-        "isArchived",
-        { project: ["id", "name"] }
+        "createdAt",
+        "coverFile"
       ];
 
       const query = buildIdQuery(schema, "deck", params.deck_id, deckSelection);
