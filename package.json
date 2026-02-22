@@ -13,7 +13,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "lint": "eslint src tests --ext .ts"
+    "lint": "eslint src tests --ext .ts",
+    "eval": "node scripts/run-evaluation.mjs",
+    "eval:verbose": "node scripts/run-evaluation.mjs --verbose"
   },
   "engines": {
     "node": ">=18"
@@ -27,6 +29,7 @@
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.0",
+    "@types/xml2js": "^0.4.14",
     "@typescript-eslint/eslint-plugin": "^8.56.0",
     "@typescript-eslint/parser": "^8.56.0",
     "@vitest/coverage-v8": "^2.1.4",
@@ -34,6 +37,7 @@
     "eslint": "^9.39.3",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.4"
+    "vitest": "^2.1.4",
+    "xml2js": "^0.6.2"
   }
 }

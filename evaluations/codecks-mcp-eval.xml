@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<evaluation>
+  <metadata>
+    <title>Codecks MCP Server Evaluation</title>
+    <description>Comprehensive evaluation of Codecks MCP server tools covering read-only operations</description>
+    <created>2026-02-22</created>
+    <version>1.0</version>
+  </metadata>
+  
+  <qa_pair>
+    <question>What is the ID and name of the currently authenticated user in the Codecks account?</question>
+    <answer_type>json</answer_type>
+    <answer>{"tool": "codecks_get_current_user", "contains": ["id", "name"]}</answer>
+    <notes>Tests basic user authentication and identity retrieval</notes>
+  </qa_pair>
+  
+  <qa_pair>
+    <question>How many active (non-deleted, non-archived) projects exist in the account?</question>
+    <answer_type>count</answer_type>
+    <answer>{"tool": "codecks_list_projects", "params": {"include_archived": false}}</answer>
+    <notes>Tests project listing and filtering</notes>
+  </qa_pair>
+  
+  <qa_pair>
+    <question>List all project names and their visibility status. What visibility values appear in the results?</question>
+    <answer_type>json</answer_type>
+    <answer>{"tool": "codecks_list_projects", "params": {"include_archived": true, "response_format": "json"}}</answer>
+    <notes>Tests comprehensive project listing with all visibility states</notes>
+  </qa_pair>
+  
+  <qa_pair>
+    <question>What are the names of all decks in the account across all projects?</question>
+    <answer_type>list</answer_type>
+    <answer>{"tool": "codecks_list_decks", "params": {"response_format": "json"}}</answer>
+    <notes>Tests deck listing without project filter</notes>
+  </qa_pair>
+  
+  <qa_pair>
+    <question>How many cards are currently in 'started' status?</question>
+    <answer_type>count</answer_type>
+    <answer>{"tool": "codecks_list_cards", "params": {"status": "started", "limit": 100, "response_format": "json"}}</answer>
+    <notes>Tests card filtering by status</notes>
+  </qa_pair>
+  
+  <qa_pair>
+    <question>What is the title and current status of the most recently updated card?</question>
+    <answer_type>json</answer_type>
+    <answer>{"tool": "codecks_list_cards", "params": {"limit": 1, "offset": 0, "response_format": "json"}}</answer>
+    <notes>Tests card ordering and pagination (default order is -lastUpdatedAt)</notes>
+  </qa_pair>
+  
+  <qa_pair>
+    <question>List all milestones and their due dates. Which milestone has the earliest due date?</question>
+    <answer_type>json</answer_type>
+    <answer>{"tool": "codecks_list_milestones", "params": {"response_format": "json"}}</answer>
+    <notes>Tests milestone listing and date comparison</notes>
+  </qa_pair>
+  
+  <qa_pair>
+    <question>For the first project in the account, what is its name and how many spaces does it have?</question>
+    <answer_type>json</answer_type>
+    <answer>{"tools": ["codecks_list_projects", "codecks_get_project"], "requires_lookup": true}</answer>
+    <notes>Tests project detail retrieval using ID from list operation</notes>
+  </qa_pair>
+  
+  <qa_pair>
+    <question>What deck contains the most recently created card, and what is that deck's name?</question>
+    <answer_type>json</answer_type>
+    <answer>{"tools": ["codecks_list_cards", "codecks_get_deck"], "requires_lookup": true}</answer>
+    <notes>Tests card-to-deck relationship and multi-step lookup</notes>
+  </qa_pair>
+  
+  <qa_pair>
+    <question>How many total cards exist across all decks in the account?</question>
+    <answer_type>count</answer_type>
+    <answer>{"tool": "codecks_list_cards", "params": {"limit": 100, "offset": 0}}</answer>
+    <notes>Tests card counting with pagination awareness</notes>
+  </qa_pair>
+</evaluation>

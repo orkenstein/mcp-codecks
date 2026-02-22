@@ -153,11 +153,34 @@ Codecks API has a rate limit of **40 requests per 5 seconds** per IP address. Th
 
 ## Testing
 
-You can test the server using the MCP Inspector:
+### Unit and Integration Tests
+
+Run the test suite:
+
+```bash
+npm test                    # Unit tests
+npm run test:integration    # Integration tests (requires API credentials)
+npm run test:watch          # Watch mode
+```
+
+### MCP Inspector
+
+You can test the server interactively using the MCP Inspector:
 
 ```bash
 npx @modelcontextprotocol/inspector dist/index.js
 ```
+
+### Evaluation Suite
+
+Run the comprehensive evaluation suite to test all MCP tools:
+
+```bash
+npm run eval          # Run evaluation suite
+npm run eval:verbose  # Run with detailed output
+```
+
+See [evaluations/README.md](evaluations/README.md) for more details on the evaluation framework.
 
 ## Architecture
 
