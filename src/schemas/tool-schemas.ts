@@ -46,10 +46,11 @@ export const BulkUpdateCardsSchema = z.object({
   status: CardStatusSchema.optional()
     .describe("Updated workflow status"),
   deck_id: z.string().optional().describe("Move cards to the specified deck ID"),
+  milestone_id: z.string().optional().describe("Assign cards to the specified milestone ID"),
   session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
 }).strict().refine(
-  (value) => Boolean(value.status || value.deck_id),
-  { message: "Provide at least one of status or deck_id." }
+  (value) => Boolean(value.status || value.deck_id || value.milestone_id),
+  { message: "Provide at least one of status, deck_id, or milestone_id." }
 );
 
 export const GetCardSchema = z.object({

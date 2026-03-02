@@ -15,6 +15,7 @@ describe("tool schemas", () => {
     expect(() => BulkUpdateCardsSchema.parse({ ids: ["a"], status: "done" })).not.toThrow();
     expect(() => BulkUpdateCardsSchema.parse({ ids: ["a"], status: "hero" })).not.toThrow();
     expect(() => BulkUpdateCardsSchema.parse({ ids: ["a"], deck_id: "deck1" })).not.toThrow();
+    expect(() => BulkUpdateCardsSchema.parse({ ids: ["a"], milestone_id: "ms1" })).not.toThrow();
     expect(() => BulkUpdateCardsSchema.parse({ ids: ["a"] })).toThrow();
   });
 

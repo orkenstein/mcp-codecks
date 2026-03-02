@@ -544,6 +544,7 @@ Args:
   - ids (string[]): Card IDs to update
   - status (enum, optional): New workflow status
   - deck_id (string, optional): Move cards to this deck
+  - milestone_id (string, optional): Assign cards to this milestone
   - session_id (string, optional): Client session ID from web app
 
 Returns:
@@ -571,6 +572,10 @@ Returns:
 
       if (params.deck_id) {
         data.deckId = params.deck_id;
+      }
+
+      if (params.milestone_id) {
+        data.milestoneId = params.milestone_id;
       }
 
       const response = await client.dispatch("cards/bulkUpdate", data);
