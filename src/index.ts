@@ -26,6 +26,10 @@ import {
   type Selection
 } from "./utils/query-builder.js";
 import { registerAutoTools } from "./utils/auto-tools.js";
+import {
+  isWorkflowApplyVersionGateError,
+  resolveMilestoneUnlinkGlobalize
+} from "./utils/tool-guards.js";
 
 // Initialize MCP server
 const server = new McpServer({
@@ -188,6 +192,7 @@ async function resolveOwnCardUpvoteId(
   }
   return undefined;
 }
+
 
 // ============================================================================
 // TOOL: codecks_list_cards
@@ -568,7 +573,8 @@ Args:
   - response_format ('markdown' | 'json'): Output format (default: 'markdown')
 
 Returns:
-  API response payload with journey expansion result.`,
+  API response payload with journey expansion result.
+  Note: some Codecks accounts currently gate this dispatch endpoint and may require web-app usage.`,
     inputSchema: schemas.StartJourneySchema,
     annotations: {
       readOnlyHint: false,
@@ -603,6 +609,22 @@ Returns:
         structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
       };
     } catch (error) {
+      if (isWorkflowApplyVersionGateError(error)) {
+        const unsupportedPayload = {
+          card_id: params.card_id,
+          unsupported: true,
+          reason: "workflows_apply_version_gate",
+          guidance: "Codecks rejected workflows/apply with an app-version gate. Trigger this action in the Codecks web app for now.",
+          error: formatError(error)
+        };
+        const text = params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(unsupportedPayload, null, 2)
+          : `Unable to start journey for card ${params.card_id}: Codecks currently gates workflows/apply for this API context ("old version of the app").`;
+        return {
+          content: [{ type: "text", text }],
+          structuredContent: params.response_format === ResponseFormat.JSON ? unsupportedPayload : undefined
+        };
+      }
       return {
         content: [{ type: "text", text: formatError(error) }]
       };
@@ -2112,7 +2134,7 @@ server.registerTool(
   TOOL_UNLINK_MILESTONE_PROJECT,
   {
     title: "Unlink Milestone from Project",
-    description: "Remove an existing milestone-project link.",
+    description: "Remove an existing milestone-project link. To unlink the final project from a non-global milestone, set globalize_if_last_project=true.",
     inputSchema: schemas.UnlinkMilestoneProjectSchema,
     annotations: {
       readOnlyHint: false,
@@ -2189,7 +2211,32 @@ server.registerTool(
 
       const projectIds = existingProjectIds.filter((id) => id !== params.project_id);
       const resolvedIsGlobal = typeof milestone.isGlobal === "boolean" ? milestone.isGlobal : false;
-      const nextIsGlobal = projectIds.length === 0 ? true : resolvedIsGlobal;
+      const unlinkDecision = resolveMilestoneUnlinkGlobalize({
+        remainingProjectCount: projectIds.length,
+        currentIsGlobal: resolvedIsGlobal,
+        globalizeIfLastProject: params.globalize_if_last_project
+      });
+      if (!unlinkDecision.allowed) {
+        const guardedPayload = {
+          milestone_id: params.milestone_id,
+          project_id: params.project_id,
+          unlink_performed: false,
+          requires_globalize_confirmation: unlinkDecision.requiresConfirmation,
+          current_is_global: resolvedIsGlobal,
+          current_project_ids: existingProjectIds,
+          suggested_retry: {
+            globalize_if_last_project: true
+          }
+        };
+        const text = params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(guardedPayload, null, 2)
+          : `Refusing to unlink last project '${params.project_id}' from non-global milestone '${params.milestone_id}' without explicit confirmation. Retry with globalize_if_last_project=true if you want to convert it to global.`;
+        return {
+          content: [{ type: "text", text }],
+          structuredContent: params.response_format === ResponseFormat.JSON ? guardedPayload : undefined
+        };
+      }
+      const nextIsGlobal = unlinkDecision.nextIsGlobal;
       const updateData: Record<string, unknown> = {
         sessionId: params.session_id || undefined,
         id: params.milestone_id,
@@ -2245,6 +2292,7 @@ server.registerTool(
       const payload = {
         milestone_id: params.milestone_id,
         project_id: params.project_id,
+        globalized: unlinkDecision.wouldGlobalize,
         is_global: nextIsGlobal,
         project_ids: projectIds,
         verified_project_ids: verifiedProjectIds,

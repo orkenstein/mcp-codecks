@@ -1240,6 +1240,198 @@ describe("auto tools", () => {
     expect(getResult.structuredContent.id).toBe("cs1");
   });
 
+  it("preserves handCard relation selections when upstream accepts them", async () => {
+    const server = createServer();
+    let sawCardSelection = false;
+    const getClient = () => ({
+      query: async (query: any) => {
+        const serialized = JSON.stringify(query);
+        if (serialized.includes("\"card\"")) {
+          sawCardSelection = true;
+        }
+        const firstKey = Object.keys(query)[0] || "";
+        if (firstKey.startsWith("handCard(")) {
+          return {
+            handCard: {
+              hc1: { id: "hc1", sortIndex: 1, card: "c1" }
+            },
+            card: {
+              c1: { title: "Task 1" }
+            }
+          };
+        }
+        return {
+          _root: [{ account: "a1" }],
+          account: { a1: { handCards: ["hc1"] } },
+          handCard: {
+            hc1: { id: "hc1", sortIndex: 1, card: "c1" }
+          },
+          card: {
+            c1: { title: "Task 1" }
+          }
+        };
+      }
+    });
+
+    registerAutoTools({
+      server: server as any,
+      schema: {
+        models: {
+          _root: { type: "root", fields: {}, relations: { account: { type: "account", cardinality: "one" } } },
+          account: { type: "model", fields: {}, relations: { handCards: { type: "handCard", cardinality: "many" } } },
+          handCard: {
+            type: "model",
+            fields: { sortIndex: "int" },
+            relations: { card: { type: "card", cardinality: "one" } }
+          },
+          card: { type: "model", fields: { title: "string" }, relations: {} }
+        }
+      } as any,
+      getClient: getClient as any,
+      formatError: (e) => String(e)
+    });
+
+    const listResult = await server.tools["codecks_list_hand_card"].handler({
+      selection: ["sortIndex", { card: ["title"] }],
+      response_format: ResponseFormat.JSON
+    });
+    expect(listResult.structuredContent.items[0].card.title).toBe("Task 1");
+
+    const getResult = await server.tools["codecks_get_hand_card"].handler({
+      id: "hc1",
+      selection: ["sortIndex", { card: ["title"] }],
+      response_format: ResponseFormat.JSON
+    });
+    expect(getResult.structuredContent.card.title).toBe("Task 1");
+    expect(sawCardSelection).toBe(true);
+  });
+
+  it("preserves cardSubscription relation selections when upstream accepts them", async () => {
+    const server = createServer();
+    let sawCardSelection = false;
+    const getClient = () => ({
+      query: async (query: any) => {
+        const serialized = JSON.stringify(query);
+        if (serialized.includes("\"card\"")) {
+          sawCardSelection = true;
+        }
+        const firstKey = Object.keys(query)[0] || "";
+        if (firstKey.startsWith("cardSubscription(")) {
+          return {
+            cardSubscription: {
+              cs1: { id: "cs1", createdAt: "2026-01-01", card: "c1" }
+            },
+            card: {
+              c1: { title: "Subscribed task" }
+            }
+          };
+        }
+        return {
+          _root: [{ account: "a1" }],
+          account: { a1: { cardSubscriptions: ["cs1"] } },
+          cardSubscription: {
+            cs1: { id: "cs1", createdAt: "2026-01-01", card: "c1" }
+          },
+          card: {
+            c1: { title: "Subscribed task" }
+          }
+        };
+      }
+    });
+
+    registerAutoTools({
+      server: server as any,
+      schema: {
+        models: {
+          _root: { type: "root", fields: {}, relations: { account: { type: "account", cardinality: "one" } } },
+          account: { type: "model", fields: {}, relations: { cardSubscriptions: { type: "cardSubscription", cardinality: "many" } } },
+          cardSubscription: {
+            type: "model",
+            fields: { createdAt: "date" },
+            relations: { card: { type: "card", cardinality: "one" } }
+          },
+          card: { type: "model", fields: { title: "string" }, relations: {} }
+        }
+      } as any,
+      getClient: getClient as any,
+      formatError: (e) => String(e)
+    });
+
+    const listResult = await server.tools["codecks_list_card_subscription"].handler({
+      selection: ["createdAt", { card: ["title"] }],
+      response_format: ResponseFormat.JSON
+    });
+    expect(listResult.structuredContent.items[0].card.title).toBe("Subscribed task");
+
+    const getResult = await server.tools["codecks_get_card_subscription"].handler({
+      id: "cs1",
+      selection: ["createdAt", { card: ["title"] }],
+      response_format: ResponseFormat.JSON
+    });
+    expect(getResult.structuredContent.card.title).toBe("Subscribed task");
+    expect(sawCardSelection).toBe(true);
+  });
+
+  it("supplements milestone lookup when milestoneProject milestone relation is unresolved", async () => {
+    const server = createServer();
+    let milestoneLookupCount = 0;
+    const getClient = () => ({
+      query: async (query: any) => {
+        const firstKey = Object.keys(query)[0] || "";
+        if (firstKey.startsWith("milestone(")) {
+          milestoneLookupCount += 1;
+          return {
+            milestone: {
+              m1: { id: "m1", isDeleted: true },
+              m2: { id: "m2", isDeleted: false }
+            }
+          };
+        }
+        return {
+          _root: [{ account: "a1" }],
+          account: { a1: { milestoneProjects: ["mp1", "mp2"] } },
+          milestoneProject: {
+            mp1: { id: "mp1", milestone: "m1", milestoneId: "m1", project: "p1" },
+            mp2: { id: "mp2", milestone: "m2", milestoneId: "m2", project: "p2" }
+          },
+          project: {
+            p1: { id: "p1", name: "Project 1" },
+            p2: { id: "p2", name: "Project 2" }
+          }
+        };
+      }
+    });
+
+    registerAutoTools({
+      server: server as any,
+      schema: {
+        models: {
+          _root: { type: "root", fields: {}, relations: { account: { type: "account", cardinality: "one" } } },
+          account: { type: "model", fields: {}, relations: { milestoneProjects: { type: "milestoneProject", cardinality: "many" } } },
+          milestoneProject: {
+            type: "model",
+            fields: { milestoneId: "string" },
+            relations: {
+              milestone: { type: "milestone", cardinality: "one" },
+              project: { type: "project", cardinality: "one" }
+            }
+          },
+          milestone: { type: "model", fields: { isDeleted: "bool" }, relations: {} },
+          project: { type: "model", fields: { name: "string" }, relations: {} }
+        }
+      } as any,
+      getClient: getClient as any,
+      formatError: (e) => String(e)
+    });
+
+    const result = await server.tools["codecks_list_milestone_project"].handler({
+      response_format: ResponseFormat.JSON
+    });
+    expect(result.structuredContent.items).toHaveLength(1);
+    expect(result.structuredContent.items[0].id).toBe("mp2");
+    expect(milestoneLookupCount).toBeGreaterThan(0);
+  });
+
   it("excludes deleted milestones from milestoneProject by default and supports include_deleted override", async () => {
     const server = createServer();
     const getClient = () => ({

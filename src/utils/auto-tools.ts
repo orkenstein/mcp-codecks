@@ -224,6 +224,41 @@ function sanitizeSelectionForModel(modelName: string, selection: Selection[]): S
   return (MODEL_SELECTION_OVERRIDES[modelName] ?? []) as Selection[];
 }
 
+function buildSelectionCandidates(args: {
+  schema: CodecksApiSchema;
+  modelName: string;
+  requestedSelection: Selection[];
+  sanitizedSelection: Selection[];
+  includeRelations: boolean;
+}): Selection[][] {
+  const { schema, modelName, requestedSelection, sanitizedSelection, includeRelations } = args;
+  const seen = new Set<string>();
+  const candidates: Selection[][] = [];
+  const addCandidate = (selection: Selection[]) => {
+    if (!Array.isArray(selection) || selection.length === 0) {
+      return;
+    }
+    const key = JSON.stringify(selection);
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    candidates.push(selection);
+  };
+
+  if (includeRelations) {
+    addCandidate(withSafeRelationExpansion(schema, modelName, requestedSelection));
+  }
+  addCandidate(requestedSelection);
+
+  if (includeRelations) {
+    addCandidate(withSafeRelationExpansion(schema, modelName, sanitizedSelection));
+  }
+  addCandidate(sanitizedSelection);
+
+  return candidates.length > 0 ? candidates : [sanitizedSelection];
+}
+
 function getRelationNameFromSelectionKey(key: string): string {
   const parenIndex = key.indexOf("(");
   return parenIndex >= 0 ? key.slice(0, parenIndex) : key;
@@ -574,20 +609,78 @@ function normalizeItemsForModel(modelName: string, items: any[]): any[] {
   return items.map((item) => normalizeItemForModel(modelName, item));
 }
 
-function applyModelSpecificListFiltering(
+async function applyModelSpecificListFiltering(
+  schema: CodecksApiSchema,
+  client: CodecksClient,
   modelName: string,
   items: any[],
   includeDeleted: boolean
-): any[] {
+): Promise<any[]> {
   if (includeDeleted) {
     return items;
   }
 
   if (modelName === "milestoneProject") {
-    return items.filter((item) => {
+    const milestoneDeletedById = new Map<string, boolean>();
+    const unresolvedMilestoneIds = new Set<string>();
+    const getMilestoneInfo = (item: any): { id: string | undefined; isDeleted: boolean | undefined } => {
       const milestone = item?.milestone;
-      if (milestone && typeof milestone === "object") {
-        return (milestone as Record<string, unknown>).isDeleted !== true;
+      if (milestone && typeof milestone === "object" && !Array.isArray(milestone)) {
+        const milestoneRecord = milestone as Record<string, unknown>;
+        const id = typeof milestoneRecord.id === "string" ? milestoneRecord.id : undefined;
+        const isDeleted = typeof milestoneRecord.isDeleted === "boolean" ? milestoneRecord.isDeleted : undefined;
+        return { id, isDeleted };
+      }
+      if (typeof milestone === "string") {
+        return { id: milestone, isDeleted: undefined };
+      }
+      if (typeof item?.milestoneId === "string") {
+        return { id: item.milestoneId, isDeleted: undefined };
+      }
+      return { id: undefined, isDeleted: undefined };
+    };
+
+    for (const item of items) {
+      const { id, isDeleted } = getMilestoneInfo(item);
+      if (!id) {
+        continue;
+      }
+      if (isDeleted !== undefined) {
+        milestoneDeletedById.set(id, isDeleted);
+      } else if (!milestoneDeletedById.has(id)) {
+        unresolvedMilestoneIds.add(id);
+      }
+    }
+
+    if (unresolvedMilestoneIds.size > 0) {
+      try {
+        const milestoneSelection: Selection[] = ["id", "isDeleted"];
+        const query = buildIdQuery(schema, "milestone", Array.from(unresolvedMilestoneIds), milestoneSelection);
+        const response = await client.query(query);
+        for (const milestoneId of unresolvedMilestoneIds) {
+          const milestone = denormalizeById(
+            schema,
+            response,
+            "milestone",
+            milestoneId,
+            milestoneSelection
+          ) as Record<string, unknown> | null;
+          if (typeof milestone?.isDeleted === "boolean") {
+            milestoneDeletedById.set(milestoneId, milestone.isDeleted);
+          }
+        }
+      } catch {
+        // Best-effort fallback: rely on already-resolved milestone relation fields.
+      }
+    }
+
+    return items.filter((item) => {
+      const { id, isDeleted } = getMilestoneInfo(item);
+      if (isDeleted === true) {
+        return false;
+      }
+      if (id && milestoneDeletedById.get(id) === true) {
+        return false;
       }
       return true;
     });
@@ -718,15 +811,21 @@ export function registerAutoTools(options: RegisterAutoToolsOptions) {
             params.selection,
             getDefaultSelection(schema, modelName)
           );
-          let baseSelection = sanitizeSelectionForModel(modelName, rawSelection);
+          let requestedSelection = rawSelection;
+          let sanitizedSelection = sanitizeSelectionForModel(modelName, rawSelection);
           if (modelName === "milestoneProject" && params.include_deleted !== true) {
-            baseSelection = ensureMilestoneProjectSelectionForDeletionFilter(schema, baseSelection);
+            requestedSelection = ensureMilestoneProjectSelectionForDeletionFilter(schema, requestedSelection);
+            sanitizedSelection = ensureMilestoneProjectSelectionForDeletionFilter(schema, sanitizedSelection);
           }
           const includeRelations = params.include_relations === true;
           const includeDeleted = params.include_deleted === true;
-          const selectionCandidates = includeRelations
-            ? [withSafeRelationExpansion(schema, modelName, baseSelection), baseSelection]
-            : [baseSelection];
+          const selectionCandidates = buildSelectionCandidates({
+            schema,
+            modelName,
+            requestedSelection,
+            sanitizedSelection,
+            includeRelations
+          });
           const limit = typeof params.limit === "number" ? params.limit : DEFAULT_LIMIT;
           const offset = typeof params.offset === "number" ? params.offset : 0;
           const orderDesc = typeof params.order_desc === "boolean" ? params.order_desc : true;
@@ -845,7 +944,13 @@ export function registerAutoTools(options: RegisterAutoToolsOptions) {
             itemsToReturn = applyClientSideOrdering(itemsToReturn, orderField, orderDesc);
           }
 
-          itemsToReturn = applyModelSpecificListFiltering(modelName, itemsToReturn, includeDeleted);
+          itemsToReturn = await applyModelSpecificListFiltering(
+            schema,
+            client,
+            modelName,
+            itemsToReturn,
+            includeDeleted
+          );
 
           if (!usedServerPagination || usedUnfilteredFallback || MODEL_FORCE_CLIENT_SIDE_FILTERING.has(modelName)) {
             itemsToReturn = applyClientSidePagination(itemsToReturn, limit, offset);
@@ -898,16 +1003,20 @@ export function registerAutoTools(options: RegisterAutoToolsOptions) {
             params.selection,
             getDefaultSelection(schema, modelName)
           );
-          const baseSelection = sanitizeSelectionForModel(modelName, rawSelection);
+          const sanitizedSelection = sanitizeSelectionForModel(modelName, rawSelection);
           const includeRelations = params.include_relations === true;
-          const selectionCandidates = includeRelations
-            ? [withSafeRelationExpansion(schema, modelName, baseSelection), baseSelection]
-            : [baseSelection];
+          const selectionCandidates = buildSelectionCandidates({
+            schema,
+            modelName,
+            requestedSelection: rawSelection,
+            sanitizedSelection,
+            includeRelations
+          });
           const relationPaths = resolveRelationPaths(schema, modelName);
 
           if (modelName === "publicProjectInfo") {
             try {
-              const safeSelection = baseSelection.length > 0 ? baseSelection : getDefaultSelection(schema, modelName);
+              const safeSelection = sanitizedSelection.length > 0 ? sanitizedSelection : getDefaultSelection(schema, modelName);
               const projectQuery = buildIdQuery(schema, "project", [params.id], [
                 "id",
                 "name",

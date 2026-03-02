@@ -122,6 +122,19 @@ describe("CodecksClient", () => {
     );
   });
 
+  it("maps nested payload.error into default error status message", async () => {
+    const client = new CodecksClient("token", "subdomain");
+    mock.onPost(API_BASE_URL).reply(400, {
+      payload: {
+        error: "You're using an old version of the app. Please Refresh."
+      }
+    });
+
+    await expect(client.query({})).rejects.toThrow(
+      "API request failed with status 400: You're using an old version of the app. Please Refresh."
+    );
+  });
+
   it("maps dispatch errors through handleError", async () => {
     const client = new CodecksClient("token", "subdomain");
     mock.onPost(`${API_BASE_URL}/dispatch/cards/create`).reply(404, { message: "missing" });

@@ -295,6 +295,7 @@ export const DeleteMilestoneSchema = z.object({
 export const UnlinkMilestoneProjectSchema = z.object({
   milestone_id: z.string().describe("Milestone ID to update"),
   project_id: z.string().describe("Project ID to unlink from milestone"),
+  globalize_if_last_project: z.boolean().default(false).describe("Allow converting a non-global milestone to global when unlinking its final project"),
   session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage"),
   response_format: ResponseFormatSchema
 }).strict();

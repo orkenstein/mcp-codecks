@@ -143,9 +143,16 @@ describe("tool schemas", () => {
     expect(() => UpdateMilestoneSchema.parse({ milestone_id: "ms-1", name: "Renamed", response_format: "json" })).not.toThrow();
     expect(() => UpdateMilestoneSchema.parse({ milestone_id: "ms-1", response_format: "json" })).toThrow();
     expect(() => DeleteMilestoneSchema.parse({ milestone_id: "ms-1", response_format: "json" })).not.toThrow();
+    const unlinkDefaults = UnlinkMilestoneProjectSchema.parse({
+      milestone_id: "ms-1",
+      project_id: "project-1",
+      response_format: "json"
+    });
+    expect(unlinkDefaults.globalize_if_last_project).toBe(false);
     expect(() => UnlinkMilestoneProjectSchema.parse({
       milestone_id: "ms-1",
       project_id: "project-1",
+      globalize_if_last_project: true,
       response_format: "json"
     })).not.toThrow();
   });

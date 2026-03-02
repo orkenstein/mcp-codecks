@@ -5,6 +5,29 @@
 
 import axios, { AxiosError } from "axios";
 import { API_BASE_URL } from "../constants.js";
+function extractApiErrorMessage(data: unknown): string | undefined {
+  if (!data || typeof data !== "object") {
+    return undefined;
+  }
+  const record = data as Record<string, unknown>;
+  if (typeof record.message === "string" && record.message.trim().length > 0) {
+    return record.message;
+  }
+  if (typeof record.error === "string" && record.error.trim().length > 0) {
+    return record.error;
+  }
+  const payload = record.payload;
+  if (payload && typeof payload === "object") {
+    const payloadRecord = payload as Record<string, unknown>;
+    if (typeof payloadRecord.message === "string" && payloadRecord.message.trim().length > 0) {
+      return payloadRecord.message;
+    }
+    if (typeof payloadRecord.error === "string" && payloadRecord.error.trim().length > 0) {
+      return payloadRecord.error;
+    }
+  }
+  return undefined;
+}
 
 /**
  * Handle API errors with descriptive messages
@@ -15,8 +38,7 @@ export function handleError(error: unknown): Error {
     
     if (axiosError.response) {
       const status = axiosError.response.status;
-      const data = axiosError.response.data as Record<string, unknown>;
-      const message = typeof data?.message === 'string' ? data.message : axiosError.message;
+      const message = extractApiErrorMessage(axiosError.response.data) || axiosError.message;
       
       switch (status) {
         case 401:
