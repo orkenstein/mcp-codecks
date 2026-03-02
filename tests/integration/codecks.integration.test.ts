@@ -221,9 +221,36 @@ maybeDescribe("codecks integration (read)", () => {
     expect(listedCards.length).toBe(Math.min(100, expectedTitles.length));
     for (const card of listedCards) {
       expect(card?.id).toBeTruthy();
+      expect(card?.cardId).toBeUndefined();
       const listedDeckId = typeof card?.deck === "object" ? card.deck?.id : card?.deck;
       expect(listedDeckId).toBe(deckId);
     }
+  });
+
+  it("retrieves card details via codecks_get_card without 500", async () => {
+    if (!existsSync("dist/index.js")) {
+      return;
+    }
+
+    const listResult = await callMcpTool("codecks_list_cards", {
+      limit: 1,
+      offset: 0,
+      response_format: "json"
+    });
+    expect(listResult?.result?.isError).not.toBe(true);
+    const firstCard = listResult?.result?.structuredContent?.cards?.[0];
+    const cardId = firstCard?.id;
+    if (!cardId) {
+      return;
+    }
+
+    const getResult = await callMcpTool("codecks_get_card", {
+      card_id: cardId,
+      response_format: "json"
+    });
+    expect(getResult?.result?.isError).not.toBe(true);
+    const card = getResult?.result?.structuredContent || {};
+    expect(card.id).toBe(cardId);
   });
 
   it("keeps account and activity list tools consistent with get_account", async () => {

@@ -233,8 +233,8 @@ function resolveEntity(
     }
   }
 
-  if (entity.id && !output.id) {
-    output.id = entity.id;
+  if (!output.id) {
+    output.id = entity.id ?? id;
   }
 
   return output;

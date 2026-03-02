@@ -45,10 +45,20 @@ const MODEL_PATH_OVERRIDES: Record<string, RelationPath[]> = {
 
 const MODEL_SELECTION_OVERRIDES: Record<string, Selection[]> = {
   // activities7d and visits7d currently trigger upstream 500s; keep safe subset by default.
-  publicProjectInfo: ["cardCount", "cardDoneStreak", "lastActivityAt"]
+  publicProjectInfo: ["cardCount", "cardDoneStreak", "lastActivityAt"],
+  // Relation-heavy activity selections can trigger upstream 500s; keep safe field-only defaults.
+  activity: ["createdAt", "type", "data"]
 };
 const MODEL_SELECTION_ALLOWLIST: Record<string, Set<string>> = {
-  publicProjectInfo: new Set(["cardCount", "cardDoneStreak", "lastActivityAt"])
+  publicProjectInfo: new Set(["cardCount", "cardDoneStreak", "lastActivityAt"]),
+  activity: new Set([
+    "createdAt",
+    "type",
+    "data",
+    "isRemovedFromDeckEntry",
+    "isRemovedFromMilestoneEntry",
+    "isRemovedFromSprintEntry"
+  ])
 };
 const MODEL_FORCE_CLIENT_SIDE_FILTERING = new Set(["milestoneProject"]);
 const COMPATIBILITY_ALIASES: Record<string, { list: string[]; get: string[] }> = {

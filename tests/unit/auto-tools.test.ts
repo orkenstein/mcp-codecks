@@ -955,4 +955,54 @@ describe("auto tools", () => {
     expect(getResult.structuredContent.data.cardId).toBe("c1");
     expect(getResult.structuredContent.data.card_id).toBeUndefined();
   });
+
+  it("sanitizes activity relation selections to avoid upstream failures", async () => {
+    const server = createServer();
+    const getClient = () => ({
+      query: async (query: any) => {
+        const serialized = JSON.stringify(query);
+        if (serialized.includes("\"card\"") || serialized.includes("\"project\"")) {
+          throw new Error("unsafe activity relation selection");
+        }
+        return {
+          _root: [{ account: "a1" }],
+          account: { a1: { activities: ["ac1"] } },
+          activity: { ac1: { id: "ac1", createdAt: "2026-01-01", type: "changed", data: {} } }
+        };
+      }
+    });
+
+    registerAutoTools({
+      server: server as any,
+      schema: {
+        models: {
+          _root: { type: "root", fields: {}, relations: { account: { type: "account", cardinality: "one" } } },
+          account: { type: "model", fields: {}, relations: { activities: { type: "activity", cardinality: "many" } } },
+          activity: {
+            type: "model",
+            fields: { createdAt: "date", type: "string", data: "json" },
+            relations: { card: { type: "card", cardinality: "one" }, project: { type: "project", cardinality: "one" } }
+          },
+          card: { type: "model", fields: { title: "string" }, relations: {} },
+          project: { type: "model", fields: { name: "string" }, relations: {} }
+        }
+      } as any,
+      getClient: getClient as any,
+      formatError: (e) => String(e)
+    });
+
+    const listResult = await server.tools["codecks_list_activity"].handler({
+      selection: ["createdAt", { card: ["title"] }, { project: ["name"] }],
+      response_format: ResponseFormat.JSON
+    });
+    expect(listResult.structuredContent.items[0].id).toBe("ac1");
+    expect(listResult.structuredContent.items[0].createdAt).toBe("2026-01-01");
+
+    const getResult = await server.tools["codecks_get_activity"].handler({
+      id: "ac1",
+      selection: ["createdAt", { card: ["title"] }],
+      response_format: ResponseFormat.JSON
+    });
+    expect(getResult.structuredContent.id).toBe("ac1");
+  });
 });

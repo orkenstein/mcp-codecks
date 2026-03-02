@@ -80,9 +80,15 @@ function getClient(): CodecksClient {
   return client;
 }
 
-function normalizeCardId(card: Record<string, any>): Record<string, any> {
-  const id = card?.id || card?.cardId;
-  return id ? { ...card, id } : card;
+function normalizeCardId(card: Record<string, any>, fallbackId?: string): Record<string, any> {
+  const id = card?.id || card?.cardId || card?.card_id || fallbackId;
+  if (!id) {
+    return card;
+  }
+  const normalized: Record<string, any> = { ...card, id };
+  delete normalized.cardId;
+  delete normalized.card_id;
+  return normalized;
 }
 
 // ============================================================================
@@ -162,7 +168,6 @@ Error Handling:
       }
 
       const cardSelection: Selection[] = [
-        "cardId",
         "accountSeq",
         "title",
         "content",
@@ -313,9 +318,7 @@ Error Handling:
     try {
       const client = getClient();
 
-      // Note: 'cardId' is automatically included in response
       const cardSelection: Selection[] = [
-        "cardId",
         "accountSeq",
         "title",
         "content",
@@ -329,16 +332,35 @@ Error Handling:
         "lastUpdatedAt"
       ];
 
-      const query = buildIdQuery(schema, "card", params.card_id, cardSelection);
-      const response = await client.query(query);
-      const card = denormalizeById(
-        schema,
-        response as Record<string, any>,
-        "card",
-        params.card_id,
-        cardSelection
-      );
-      const normalizedCard = card ? normalizeCardId(card) : card;
+      let card: Record<string, any> | null = null;
+      let firstError: unknown;
+      const idVariants: Array<string | string[]> = [[params.card_id], params.card_id];
+      for (const idVariant of idVariants) {
+        try {
+          const query = buildIdQuery(schema, "card", idVariant, cardSelection);
+          const response = await client.query(query);
+          const candidate = denormalizeById(
+            schema,
+            response as Record<string, any>,
+            "card",
+            params.card_id,
+            cardSelection
+          );
+          if (candidate) {
+            card = candidate;
+            break;
+          }
+        } catch (error) {
+          if (!firstError) {
+            firstError = error;
+          }
+        }
+      }
+      if (!card && firstError) {
+        throw firstError;
+      }
+
+      const normalizedCard = card ? normalizeCardId(card, params.card_id) : card;
 
       if (!normalizedCard) {
         return {
