@@ -36,6 +36,7 @@ export const ListCardsSchema = z.object({
   status: CardStatusSchema.optional()
     .describe("Filter by status (API-derived; values vary by account/workflow)"),
   search: z.string().optional().describe("Search term to filter cards by title/content"),
+  exclude_deleted: z.boolean().default(true).describe("Exclude deleted cards by default"),
   limit: z.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
   offset: z.number().int().min(0).default(0),
   response_format: ResponseFormatSchema
@@ -55,6 +56,7 @@ export const BulkUpdateCardsSchema = z.object({
 
 export const GetCardSchema = z.object({
   card_id: z.string().describe("The card ID to retrieve"),
+  include_relations: z.boolean().default(false).describe("Include deck/milestone/assignee relation objects when available"),
   response_format: ResponseFormatSchema
 }).strict();
 
@@ -171,6 +173,106 @@ export const CreateMilestoneProjectSchema = z.object({
   session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
 }).strict();
 
+export const StartJourneySchema = z.object({
+  card_id: z.string().describe("Hero/journey parent card ID to expand"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const AddToHandSchema = z.object({
+  card_ids: z.array(z.string()).min(1).describe("Card IDs to add to hand"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const RemoveFromHandSchema = z.object({
+  card_ids: z.array(z.string()).min(1).describe("Card IDs to remove from hand"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const AddToQueueSchema = z.object({
+  card_ids: z.array(z.string()).min(1).describe("Card IDs to add to queue"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const RemoveFromQueueSchema = z.object({
+  card_ids: z.array(z.string()).min(1).describe("Card IDs to remove from queue"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const ReorderQueueSchema = z.object({
+  card_ids: z.array(z.string()).min(1).describe("Queue card IDs in desired order"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const UpvoteCardSchema = z.object({
+  card_id: z.string().describe("Card ID to upvote"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const RemoveCardUpvoteSchema = z.object({
+  card_id: z.string().optional().describe("Card ID to remove your upvote from"),
+  upvote_id: z.string().optional().describe("Specific cardUpvote ID to remove"),
+  response_format: ResponseFormatSchema
+}).strict().refine(
+  (value) => Boolean(value.card_id || value.upvote_id),
+  { message: "Provide at least one of card_id or upvote_id." }
+);
+
+export const SubscribeCardSchema = z.object({
+  card_id: z.string().describe("Card ID to subscribe to"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const UnsubscribeCardSchema = z.object({
+  card_id: z.string().describe("Card ID to unsubscribe from"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const SubscribeDeckSchema = z.object({
+  deck_id: z.string().describe("Deck ID to subscribe to"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const UnsubscribeDeckSchema = z.object({
+  deck_id: z.string().describe("Deck ID to unsubscribe from"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const UpdateMilestoneSchema = z.object({
+  milestone_id: z.string().describe("Milestone ID to update"),
+  name: z.string().optional().describe("Updated milestone name"),
+  color: z.string().optional().describe("Updated milestone color"),
+  date: z.string().optional().describe("Updated due date in YYYY-MM-DD format"),
+  start_date: z.string().optional().describe("Updated start date in YYYY-MM-DD format"),
+  hand_sync_enabled: z.boolean().optional().describe("Updated hand sync flag"),
+  is_global: z.boolean().optional().describe("Updated global flag"),
+  project_ids: z.array(z.string()).optional().describe("Updated full milestone project ID set"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage"),
+  response_format: ResponseFormatSchema
+}).strict().refine(
+  (value) => Boolean(
+    value.name !== undefined ||
+    value.color !== undefined ||
+    value.date !== undefined ||
+    value.start_date !== undefined ||
+    value.hand_sync_enabled !== undefined ||
+    value.is_global !== undefined ||
+    value.project_ids !== undefined
+  ),
+  { message: "Provide at least one field to update." }
+);
+
+export const DeleteMilestoneSchema = z.object({
+  milestone_id: z.string().describe("Milestone ID to delete/archive"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const UnlinkMilestoneProjectSchema = z.object({
+  milestone_id: z.string().describe("Milestone ID to update"),
+  project_id: z.string().describe("Project ID to unlink from milestone"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage"),
+  response_format: ResponseFormatSchema
+}).strict();
+
 // User schema
 export const GetCurrentUserSchema = z.object({
   response_format: ResponseFormatSchema
@@ -193,4 +295,19 @@ export type ListMilestonesInput = z.infer<typeof ListMilestonesSchema>;
 export type GetMilestoneInput = z.infer<typeof GetMilestoneSchema>;
 export type CreateMilestoneInput = z.infer<typeof CreateMilestoneSchema>;
 export type CreateMilestoneProjectInput = z.infer<typeof CreateMilestoneProjectSchema>;
+export type StartJourneyInput = z.infer<typeof StartJourneySchema>;
+export type AddToHandInput = z.infer<typeof AddToHandSchema>;
+export type RemoveFromHandInput = z.infer<typeof RemoveFromHandSchema>;
+export type AddToQueueInput = z.infer<typeof AddToQueueSchema>;
+export type RemoveFromQueueInput = z.infer<typeof RemoveFromQueueSchema>;
+export type ReorderQueueInput = z.infer<typeof ReorderQueueSchema>;
+export type UpvoteCardInput = z.infer<typeof UpvoteCardSchema>;
+export type RemoveCardUpvoteInput = z.infer<typeof RemoveCardUpvoteSchema>;
+export type SubscribeCardInput = z.infer<typeof SubscribeCardSchema>;
+export type UnsubscribeCardInput = z.infer<typeof UnsubscribeCardSchema>;
+export type SubscribeDeckInput = z.infer<typeof SubscribeDeckSchema>;
+export type UnsubscribeDeckInput = z.infer<typeof UnsubscribeDeckSchema>;
+export type UpdateMilestoneInput = z.infer<typeof UpdateMilestoneSchema>;
+export type DeleteMilestoneInput = z.infer<typeof DeleteMilestoneSchema>;
+export type UnlinkMilestoneProjectInput = z.infer<typeof UnlinkMilestoneProjectSchema>;
 export type GetCurrentUserInput = z.infer<typeof GetCurrentUserSchema>;

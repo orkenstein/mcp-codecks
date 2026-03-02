@@ -84,12 +84,13 @@ In addition to the curated tools below, the server auto-generates `codecks_list_
 Tool names use snake_case model names (e.g., `codecks_list_account_user_setting`).
 
 ### Card Operations
-
-- `codecks_list_cards` - List cards with filtering by deck, milestone, assignee, status, or search term
+- `codecks_list_cards` - List cards with filtering by deck, milestone, assignee, status, or search term (`exclude_deleted` defaults to `true`)
+- `codecks_get_card` - Get detailed information about a specific card (supports optional `include_relations`)
 - `codecks_get_card` - Get detailed information about a specific card
 - `codecks_delete_card` - Archive (soft-delete) a card by ID
 - `codecks_create_card` - Create a new card with content, properties, and assignments
 - `codecks_bulk_update_cards` - Bulk update card status and/or move cards to a deck
+- `codecks_start_journey` - Explicitly apply workflow/journey expansion to a card
 
 ### Deck Operations
 
@@ -107,6 +108,17 @@ Tool names use snake_case model names (e.g., `codecks_list_account_user_setting`
 - `codecks_get_milestone` - Get detailed information about a specific milestone
 - `codecks_create_milestone` - Create a milestone and attach it to project(s)
 - `codecks_create_milestone_project` - Link an existing milestone to an additional project
+- `codecks_update_milestone` - Update milestone fields and linked projects
+- `codecks_delete_milestone` - Delete/archive a milestone
+- `codecks_unlink_milestone_project` - Remove a project from a milestone's linked projects
+
+### Interaction Operations
+
+- `codecks_add_to_hand` / `codecks_remove_from_hand` - Add/remove cards from your hand
+- `codecks_add_to_queue` / `codecks_remove_from_queue` / `codecks_reorder_queue` - Manage queue membership and ordering
+- `codecks_upvote_card` / `codecks_remove_card_upvote` - Add/remove your upvote on a card
+- `codecks_subscribe_card` / `codecks_unsubscribe_card` - Subscribe/unsubscribe to card updates
+- `codecks_subscribe_deck` / `codecks_unsubscribe_deck` - Subscribe/unsubscribe to deck updates
 
 ### User Operations
 

@@ -41,17 +41,15 @@ maybeDescribe("codecks integration (read)", () => {
         }
       });
 
-      child.stdin.write(
-        JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "tools/call",
-          params: {
-            name: toolName,
-            arguments: args
-          }
-        }) + "\n"
-      );
+      child.stdin.write(`${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: toolName,
+          arguments: args
+        }
+      })}\n`);
       child.stdin.end();
     });
   }
@@ -212,6 +210,7 @@ maybeDescribe("codecks integration (read)", () => {
       deck_id: deckId,
       limit: 100,
       offset: 0,
+      exclude_deleted: false,
       response_format: "json"
     });
 
@@ -251,7 +250,7 @@ maybeDescribe("codecks integration (read)", () => {
     expect(getResult?.result?.isError).not.toBe(true);
     const card = getResult?.result?.structuredContent || {};
     expect(card.id).toBe(cardId);
-  });
+  }, 20000);
 
   it("keeps account and activity list tools consistent with get_account", async () => {
     if (!existsSync("dist/index.js")) {

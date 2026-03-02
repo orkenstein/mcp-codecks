@@ -77,14 +77,17 @@ const AutoListSchema = z.object({
   offset: z.number().int().min(0).default(0),
   order_by: z.string().optional().describe("Field to order by"),
   order_desc: z.boolean().default(true).describe("Whether to order descending"),
+  project_id: z.string().optional().describe("Unified project filter key (mapped to projectId internally)"),
   filters: z.record(z.unknown()).optional().describe("Filter object for the query"),
   selection: z.array(z.unknown()).optional().describe("Selection array (fields/relations)"),
+  include_relations: z.boolean().default(false).describe("Attempt safe first-level relation expansion with guarded fallback"),
   response_format: ResponseFormatSchema
 }).strict();
 
 const AutoGetSchema = z.object({
   id: z.string().describe("Model ID"),
   selection: z.array(z.unknown()).optional().describe("Selection array (fields/relations)"),
+  include_relations: z.boolean().default(false).describe("Attempt safe first-level relation expansion with guarded fallback"),
   response_format: ResponseFormatSchema
 }).strict();
 
@@ -136,6 +139,52 @@ function parseSelection(input: unknown, fallback: Selection[]): Selection[] {
   return Array.isArray(input) ? (input as Selection[]) : fallback;
 }
 
+function normalizeFilterKeys(filters: Record<string, unknown>): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(filters)) {
+    if (key === "project_id") {
+      normalized.projectId = value;
+      continue;
+    }
+    normalized[key] = value;
+  }
+  return normalized;
+}
+
+function getSafeFieldsForModel(schema: CodecksApiSchema, modelName: string): string[] {
+  const model = schema.models[modelName];
+  if (!model) {
+    return [];
+  }
+  const fields = Object.keys(model.fields || {});
+  const preferred = ["id", "name", "title", "accountSeq", "createdAt", "lastUpdatedAt", "status", "visibility"];
+  const picked = preferred.filter((field) => fields.includes(field));
+  if (picked.length > 0) {
+    return picked.slice(0, 4);
+  }
+  return fields.slice(0, 4);
+}
+
+function withSafeRelationExpansion(
+  schema: CodecksApiSchema,
+  modelName: string,
+  baseSelection: Selection[]
+): Selection[] {
+  const model = schema.models[modelName];
+  if (!model) {
+    return baseSelection;
+  }
+  const relations = Object.entries(model.relations || {});
+  const additions: Selection[] = [];
+  for (const [relationName, relationInfo] of relations) {
+    const safeFields = getSafeFieldsForModel(schema, relationInfo.type);
+    if (safeFields.length === 0) {
+      continue;
+    }
+    additions.push({ [relationName]: safeFields });
+  }
+  return [...baseSelection, ...additions];
+}
 function sanitizeSelectionForModel(modelName: string, selection: Selection[]): Selection[] {
   const allowlist = MODEL_SELECTION_ALLOWLIST[modelName];
   if (!allowlist) {
@@ -588,12 +637,20 @@ export function registerAutoTools(options: RegisterAutoToolsOptions) {
             params.selection,
             getDefaultSelection(schema, modelName)
           );
-          const selection = sanitizeSelectionForModel(modelName, rawSelection);
+          const baseSelection = sanitizeSelectionForModel(modelName, rawSelection);
+          const includeRelations = params.include_relations === true;
+          const selectionCandidates = includeRelations
+            ? [withSafeRelationExpansion(schema, modelName, baseSelection), baseSelection]
+            : [baseSelection];
           const limit = typeof params.limit === "number" ? params.limit : DEFAULT_LIMIT;
           const offset = typeof params.offset === "number" ? params.offset : 0;
           const orderDesc = typeof params.order_desc === "boolean" ? params.order_desc : true;
           const orderField = params.order_by || chooseOrderField(schema, modelName);
-          const userFilters = { ...(params.filters || {}) } as Record<string, unknown>;
+          const userFiltersInput = { ...(params.filters || {}) } as Record<string, unknown>;
+          if (params.project_id !== undefined) {
+            userFiltersInput.project_id = params.project_id;
+          }
+          const userFilters = normalizeFilterKeys(userFiltersInput);
           const filters = { ...userFilters } as Record<string, unknown>;
           if (orderField) {
             filters.$order = orderDesc ? `-${orderField}` : orderField;
@@ -619,72 +676,75 @@ export function registerAutoTools(options: RegisterAutoToolsOptions) {
           const hasUserFilters = Object.keys(userFilters).length > 0;
           const leafQuery = Object.keys(filters).length > 0 ? filters : undefined;
 
-          for (const path of relationPaths) {
-            try {
-              const leafCardinality = getLeafRelationCardinality(schema, path);
-              const forceClientFiltering = MODEL_FORCE_CLIENT_SIDE_FILTERING.has(modelName);
-              const leafQueryForPath =
-                leafCardinality === "many" && !forceClientFiltering
-                  ? leafQuery
-                  : undefined;
-              let items: any[];
-              let pathUsedFallback = false;
+          outer:
+          for (const selection of selectionCandidates) {
+            for (const path of relationPaths) {
               try {
-                items = await queryItemsByPath({
-                  client,
-                  schema,
-                  path,
-                  selection,
-                  leafQuery: leafQueryForPath
-                });
-              } catch (error) {
-                if (leafQueryForPath && hasUserFilters) {
+                const leafCardinality = getLeafRelationCardinality(schema, path);
+                const forceClientFiltering = MODEL_FORCE_CLIENT_SIDE_FILTERING.has(modelName);
+                const leafQueryForPath =
+                  leafCardinality === "many" && !forceClientFiltering
+                    ? leafQuery
+                    : undefined;
+                let items: any[];
+                let pathUsedFallback = false;
+                try {
                   items = await queryItemsByPath({
+                    client,
+                    schema,
+                    path,
+                    selection,
+                    leafQuery: leafQueryForPath
+                  });
+                } catch (error) {
+                  if (leafQueryForPath && hasUserFilters) {
+                    items = await queryItemsByPath({
+                      client,
+                      schema,
+                      path,
+                      selection
+                    });
+                    pathUsedFallback = true;
+                  } else {
+                    throw error;
+                  }
+                }
+
+                if (leafQueryForPath && hasUserFilters && items.length === 0) {
+                  const fallbackItems = await queryItemsByPath({
                     client,
                     schema,
                     path,
                     selection
                   });
-                  pathUsedFallback = true;
-                } else {
-                  throw error;
+                  if (fallbackItems.length > 0) {
+                    items = fallbackItems;
+                    pathUsedFallback = true;
+                  }
                 }
-              }
-
-              if (leafQueryForPath && hasUserFilters && items.length === 0) {
-                const fallbackItems = await queryItemsByPath({
-                  client,
-                  schema,
-                  path,
-                  selection
-                });
-                if (fallbackItems.length > 0) {
-                  items = fallbackItems;
-                  pathUsedFallback = true;
+                if (firstSuccessfulItems === null) {
+                  firstSuccessfulItems = items;
+                  usedServerPagination = Boolean(
+                    leafQueryForPath &&
+                    "$limit" in leafQueryForPath &&
+                    "$offset" in leafQueryForPath
+                  ) && !pathUsedFallback;
+                  usedUnfilteredFallback = pathUsedFallback;
                 }
-              }
-              if (firstSuccessfulItems === null) {
-                firstSuccessfulItems = items;
-                usedServerPagination = Boolean(
-                  leafQueryForPath &&
-                  "$limit" in leafQueryForPath &&
-                  "$offset" in leafQueryForPath
-                ) && !pathUsedFallback;
-                usedUnfilteredFallback = pathUsedFallback;
-              }
-              if (items.length > 0) {
-                firstSuccessfulItems = items;
-                usedServerPagination = Boolean(
-                  leafQueryForPath &&
-                  "$limit" in leafQueryForPath &&
-                  "$offset" in leafQueryForPath
-                ) && !pathUsedFallback;
-                usedUnfilteredFallback = pathUsedFallback;
-                break;
-              }
-            } catch (error) {
-              if (!firstError) {
-                firstError = error;
+                if (items.length > 0) {
+                  firstSuccessfulItems = items;
+                  usedServerPagination = Boolean(
+                    leafQueryForPath &&
+                    "$limit" in leafQueryForPath &&
+                    "$offset" in leafQueryForPath
+                  ) && !pathUsedFallback;
+                  usedUnfilteredFallback = pathUsedFallback;
+                  break outer;
+                }
+              } catch (error) {
+                if (!firstError) {
+                  firstError = error;
+                }
               }
             }
           }
@@ -751,12 +811,16 @@ export function registerAutoTools(options: RegisterAutoToolsOptions) {
             params.selection,
             getDefaultSelection(schema, modelName)
           );
-          const selection = sanitizeSelectionForModel(modelName, rawSelection);
+          const baseSelection = sanitizeSelectionForModel(modelName, rawSelection);
+          const includeRelations = params.include_relations === true;
+          const selectionCandidates = includeRelations
+            ? [withSafeRelationExpansion(schema, modelName, baseSelection), baseSelection]
+            : [baseSelection];
           const relationPaths = resolveRelationPaths(schema, modelName);
 
           if (modelName === "publicProjectInfo") {
             try {
-              const safeSelection = selection.length > 0 ? selection : getDefaultSelection(schema, modelName);
+              const safeSelection = baseSelection.length > 0 ? baseSelection : getDefaultSelection(schema, modelName);
               const projectQuery = buildIdQuery(schema, "project", [params.id], [
                 "id",
                 "name",
@@ -806,49 +870,51 @@ export function registerAutoTools(options: RegisterAutoToolsOptions) {
           let firstError: unknown;
           let hadSuccessfulLookup = false;
           const idVariants: Array<string | string[]> = [params.id, [params.id]];
-
-          for (const idVariant of idVariants) {
-            try {
-              const query = buildIdQuery(schema, modelName, idVariant, selection);
-              const response = await client.query(query);
-              hadSuccessfulLookup = true;
-              const item = denormalizeById(schema, response, modelName, params.id, selection);
-              if (item) {
-                const normalizedItem = normalizeItemForModel(modelName, item);
-                const formatted = formatGeneric(modelName, normalizedItem, params.response_format);
-                return {
-                  content: [{ type: "text", text: formatted }],
-                  structuredContent: params.response_format === ResponseFormat.JSON ? normalizedItem : undefined
-                };
-              }
-            } catch (error) {
-              if (!firstError) {
+          for (const selection of selectionCandidates) {
+            for (const idVariant of idVariants) {
+              try {
+                const query = buildIdQuery(schema, modelName, idVariant, selection);
+                const response = await client.query(query);
+                hadSuccessfulLookup = true;
+                const item = denormalizeById(schema, response, modelName, params.id, selection);
+                if (item) {
+                  const normalizedItem = normalizeItemForModel(modelName, item);
+                  const formatted = formatGeneric(modelName, normalizedItem, params.response_format);
+                  return {
+                    content: [{ type: "text", text: formatted }],
+                    structuredContent: params.response_format === ResponseFormat.JSON ? normalizedItem : undefined
+                  };
+                }
+              } catch (error) {
+                if (!firstError) {
+                  firstError = error;
+                }
                 firstError = error;
               }
             }
-          }
 
-          for (const path of relationPaths) {
-            try {
-              const items = await queryItemsByPath({
-                client,
-                schema,
-                path,
-                selection
-              });
-              hadSuccessfulLookup = true;
-              const item = items.find((entry) => entry?.id === params.id);
-              if (item) {
-                const normalizedItem = normalizeItemForModel(modelName, item);
-                const formatted = formatGeneric(modelName, normalizedItem, params.response_format);
-                return {
-                  content: [{ type: "text", text: formatted }],
-                  structuredContent: params.response_format === ResponseFormat.JSON ? normalizedItem : undefined
-                };
-              }
-            } catch (error) {
-              if (!firstError) {
-                firstError = error;
+            for (const path of relationPaths) {
+              try {
+                const items = await queryItemsByPath({
+                  client,
+                  schema,
+                  path,
+                  selection
+                });
+                hadSuccessfulLookup = true;
+                const item = items.find((entry) => entry?.id === params.id);
+                if (item) {
+                  const normalizedItem = normalizeItemForModel(modelName, item);
+                  const formatted = formatGeneric(modelName, normalizedItem, params.response_format);
+                  return {
+                    content: [{ type: "text", text: formatted }],
+                    structuredContent: params.response_format === ResponseFormat.JSON ? normalizedItem : undefined
+                  };
+                }
+              } catch (error) {
+                if (!firstError) {
+                  firstError = error;
+                }
               }
             }
           }

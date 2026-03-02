@@ -52,6 +52,21 @@ const TOOL_LIST_MILESTONES = "codecks_list_milestones";
 const TOOL_GET_MILESTONE = "codecks_get_milestone";
 const TOOL_CREATE_MILESTONE = "codecks_create_milestone";
 const TOOL_CREATE_MILESTONE_PROJECT = "codecks_create_milestone_project";
+const TOOL_UPDATE_MILESTONE = "codecks_update_milestone";
+const TOOL_DELETE_MILESTONE = "codecks_delete_milestone";
+const TOOL_UNLINK_MILESTONE_PROJECT = "codecks_unlink_milestone_project";
+const TOOL_START_JOURNEY = "codecks_start_journey";
+const TOOL_ADD_TO_HAND = "codecks_add_to_hand";
+const TOOL_REMOVE_FROM_HAND = "codecks_remove_from_hand";
+const TOOL_ADD_TO_QUEUE = "codecks_add_to_queue";
+const TOOL_REMOVE_FROM_QUEUE = "codecks_remove_from_queue";
+const TOOL_REORDER_QUEUE = "codecks_reorder_queue";
+const TOOL_UPVOTE_CARD = "codecks_upvote_card";
+const TOOL_REMOVE_CARD_UPVOTE = "codecks_remove_card_upvote";
+const TOOL_SUBSCRIBE_CARD = "codecks_subscribe_card";
+const TOOL_UNSUBSCRIBE_CARD = "codecks_unsubscribe_card";
+const TOOL_SUBSCRIBE_DECK = "codecks_subscribe_deck";
+const TOOL_UNSUBSCRIBE_DECK = "codecks_unsubscribe_deck";
 const TOOL_GET_CURRENT_USER = "codecks_get_current_user";
 
 const manualTools = new Set<string>([
@@ -71,6 +86,21 @@ const manualTools = new Set<string>([
   TOOL_GET_MILESTONE,
   TOOL_CREATE_MILESTONE,
   TOOL_CREATE_MILESTONE_PROJECT,
+  TOOL_UPDATE_MILESTONE,
+  TOOL_DELETE_MILESTONE,
+  TOOL_UNLINK_MILESTONE_PROJECT,
+  TOOL_START_JOURNEY,
+  TOOL_ADD_TO_HAND,
+  TOOL_REMOVE_FROM_HAND,
+  TOOL_ADD_TO_QUEUE,
+  TOOL_REMOVE_FROM_QUEUE,
+  TOOL_REORDER_QUEUE,
+  TOOL_UPVOTE_CARD,
+  TOOL_REMOVE_CARD_UPVOTE,
+  TOOL_SUBSCRIBE_CARD,
+  TOOL_UNSUBSCRIBE_CARD,
+  TOOL_SUBSCRIBE_DECK,
+  TOOL_UNSUBSCRIBE_DECK,
   TOOL_GET_CURRENT_USER
 ]);
 
@@ -93,6 +123,70 @@ function normalizeCardId(card: Record<string, any>, fallbackId?: string): Record
   delete normalized.cardId;
   delete normalized.card_id;
   return normalized;
+}
+
+async function resolveCurrentUserId(client: CodecksClient): Promise<string | undefined> {
+  const userSelection: Selection[] = ["id"];
+  const userQuery = buildRootQuery(schema, "loggedInUser", userSelection);
+  const userResponse = await client.query(userQuery);
+  const user = denormalizeRootRelation(
+    schema,
+    userResponse as Record<string, any>,
+    "loggedInUser",
+    userSelection
+  ) as Record<string, unknown> | null;
+  return typeof user?.id === "string" ? user.id : undefined;
+}
+
+async function resolveAccountId(client: CodecksClient): Promise<string | undefined> {
+  const accountSelection: Selection[] = ["id"];
+  const accountQuery = buildRootQuery(schema, "account", accountSelection);
+  const accountResponse = await client.query(accountQuery);
+  const account = denormalizeRootRelation(
+    schema,
+    accountResponse as Record<string, any>,
+    "account",
+    accountSelection
+  ) as Record<string, unknown> | null;
+  return typeof account?.id === "string" ? account.id : undefined;
+}
+
+async function resolveOwnCardUpvoteId(
+  client: CodecksClient,
+  cardId: string
+): Promise<string | undefined> {
+  const currentUserId = await resolveCurrentUserId(client);
+  if (!currentUserId) {
+    return undefined;
+  }
+
+  const cardSelection: Selection[] = [
+    { upvotes: ["id", { user: ["id"] }] }
+  ];
+  const query = buildIdQuery(schema, "card", [cardId], cardSelection);
+  const response = await client.query(query);
+  const card = denormalizeById(
+    schema,
+    response as Record<string, any>,
+    "card",
+    cardId,
+    cardSelection
+  ) as Record<string, unknown> | null;
+  const upvotes = (card?.upvotes as any[]) || [];
+  for (const upvote of upvotes) {
+    if (!upvote || typeof upvote !== "object") {
+      continue;
+    }
+    const user = (upvote as Record<string, unknown>).user;
+    const upvoteUserId = user && typeof user === "object"
+      ? (user as Record<string, unknown>).id
+      : user;
+    if (upvoteUserId === currentUserId) {
+      const id = (upvote as Record<string, unknown>).id;
+      return typeof id === "string" ? id : undefined;
+    }
+  }
+  return undefined;
 }
 
 // ============================================================================
@@ -167,6 +261,7 @@ Error Handling:
       if (params.milestone_id) filters.milestoneId = params.milestone_id;
       if (params.assignee_id) filters.assigneeId = params.assignee_id;
       if (params.status) filters.derivedStatus = params.status;
+      if (params.exclude_deleted) filters.visibility = { op: "neq", value: "deleted" };
       if (params.search) {
         filters.content = { op: "search", value: params.search };
       }
@@ -176,6 +271,7 @@ Error Handling:
         "title",
         "content",
         "derivedStatus",
+        "visibility",
         "effort",
         "priority",
         "createdAt",
@@ -228,11 +324,13 @@ Error Handling:
             const deckId = typeof card?.deck === "object" ? card.deck?.id : card?.deck;
             const milestoneId = typeof card?.milestone === "object" ? card.milestone?.id : card?.milestone;
             const assigneeId = typeof card?.assignee === "object" ? card.assignee?.id : card?.assignee;
+            const visibility = card?.visibility;
 
             if (params.deck_id && deckId !== params.deck_id) return false;
             if (params.milestone_id && milestoneId !== params.milestone_id) return false;
             if (params.assignee_id && assigneeId !== params.assignee_id) return false;
             if (params.status && card?.derivedStatus !== params.status) return false;
+            if (params.exclude_deleted && visibility === "deleted") return false;
             if (searchLower) {
               const haystack = `${card?.title || ""}\n${card?.content || ""}`.toLowerCase();
               if (!haystack.includes(searchLower)) return false;
@@ -302,6 +400,7 @@ Fetches complete details for a single card including title, content, status, ass
 
 Args:
   - card_id (string): The card ID to retrieve
+  - include_relations (boolean): Include deck/milestone/assignee objects when available (default: false)
   - response_format ('markdown' | 'json'): Output format (default: 'markdown')
 
 Returns:
@@ -322,7 +421,7 @@ Error Handling:
     try {
       const client = getClient();
 
-      const cardSelection: Selection[] = [
+      const baseCardSelection: Selection[] = [
         "accountSeq",
         "title",
         "content",
@@ -335,28 +434,40 @@ Error Handling:
         "createdAt",
         "lastUpdatedAt"
       ];
+      const richCardSelection: Selection[] = [
+        ...baseCardSelection,
+        { deck: ["id", "title"] },
+        { milestone: ["id", "name"] },
+        { assignee: ["id", "name"] }
+      ];
+      const selectionVariants = params.include_relations
+        ? [richCardSelection, baseCardSelection]
+        : [baseCardSelection];
 
       let card: Record<string, any> | null = null;
       let firstError: unknown;
       const idVariants: Array<string | string[]> = [[params.card_id], params.card_id];
-      for (const idVariant of idVariants) {
-        try {
-          const query = buildIdQuery(schema, "card", idVariant, cardSelection);
-          const response = await client.query(query);
-          const candidate = denormalizeById(
-            schema,
-            response as Record<string, any>,
-            "card",
-            params.card_id,
-            cardSelection
-          );
-          if (candidate) {
-            card = candidate;
-            break;
-          }
-        } catch (error) {
-          if (!firstError) {
-            firstError = error;
+      outer:
+      for (const cardSelection of selectionVariants) {
+        for (const idVariant of idVariants) {
+          try {
+            const query = buildIdQuery(schema, "card", idVariant, cardSelection);
+            const response = await client.query(query);
+            const candidate = denormalizeById(
+              schema,
+              response as Record<string, any>,
+              "card",
+              params.card_id,
+              cardSelection
+            );
+            if (candidate) {
+              card = candidate;
+              break outer;
+            }
+          } catch (error) {
+            if (!firstError) {
+              firstError = error;
+            }
           }
         }
       }
@@ -440,6 +551,436 @@ Returns:
   }
 );
 
+// ============================================================================
+// TOOL: codecks_start_journey
+// ============================================================================
+server.registerTool(
+  TOOL_START_JOURNEY,
+  {
+    title: "Start Journey from Hero Card",
+    description: `Trigger workflow expansion for a hero/journey parent card.
+
+Args:
+  - card_id (string): Hero/journey parent card ID
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  API response payload with journey expansion result.`,
+    inputSchema: schemas.StartJourneySchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.StartJourneyInput) => {
+    try {
+      const client = getClient();
+      const response = await client.dispatch("workflows/apply", {
+        cardId: params.card_id
+      });
+      const payload = {
+        card_id: params.card_id,
+        response
+      };
+      const text = params.response_format === ResponseFormat.JSON
+        ? JSON.stringify(payload, null, 2)
+        : `Journey started successfully for card ${params.card_id}.`;
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(error) }]
+      };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_add_to_hand
+// ============================================================================
+server.registerTool(
+  TOOL_ADD_TO_HAND,
+  {
+    title: "Add Cards to Hand",
+    description: "Add one or more cards to hand/bookmarks.",
+    inputSchema: schemas.AddToHandSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.AddToHandInput) => {
+    try {
+      const client = getClient();
+      const response = await client.dispatch("bookmarks/addCards", { ids: params.card_ids });
+      const payload = { card_ids: params.card_ids, response };
+      const text = params.response_format === ResponseFormat.JSON
+        ? JSON.stringify(payload, null, 2)
+        : `Added ${params.card_ids.length} card(s) to hand.`;
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
+      };
+    } catch (error) {
+      return { content: [{ type: "text", text: formatError(error) }] };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_remove_from_hand
+// ============================================================================
+server.registerTool(
+  TOOL_REMOVE_FROM_HAND,
+  {
+    title: "Remove Cards from Hand",
+    description: "Remove one or more cards from hand/bookmarks.",
+    inputSchema: schemas.RemoveFromHandSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.RemoveFromHandInput) => {
+    try {
+      const client = getClient();
+      const response = await client.dispatch("bookmarks/removeCards", { ids: params.card_ids });
+      const payload = { card_ids: params.card_ids, response };
+      const text = params.response_format === ResponseFormat.JSON
+        ? JSON.stringify(payload, null, 2)
+        : `Removed ${params.card_ids.length} card(s) from hand.`;
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
+      };
+    } catch (error) {
+      return { content: [{ type: "text", text: formatError(error) }] };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_add_to_queue
+// ============================================================================
+server.registerTool(
+  TOOL_ADD_TO_QUEUE,
+  {
+    title: "Add Cards to Queue",
+    description: "Add one or more cards to queue.",
+    inputSchema: schemas.AddToQueueSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.AddToQueueInput) => {
+    try {
+      const client = getClient();
+      const response = await client.dispatch("handQueue/addCardsToOwner", { cardIds: params.card_ids });
+      const payload = { card_ids: params.card_ids, response };
+      const text = params.response_format === ResponseFormat.JSON
+        ? JSON.stringify(payload, null, 2)
+        : `Added ${params.card_ids.length} card(s) to queue.`;
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
+      };
+    } catch (error) {
+      return { content: [{ type: "text", text: formatError(error) }] };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_remove_from_queue
+// ============================================================================
+server.registerTool(
+  TOOL_REMOVE_FROM_QUEUE,
+  {
+    title: "Remove Cards from Queue",
+    description: "Remove one or more cards from queue.",
+    inputSchema: schemas.RemoveFromQueueSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.RemoveFromQueueInput) => {
+    try {
+      const client = getClient();
+      const response = await client.dispatch("handQueue/removeCards", { cardIds: params.card_ids });
+      const payload = { card_ids: params.card_ids, response };
+      const text = params.response_format === ResponseFormat.JSON
+        ? JSON.stringify(payload, null, 2)
+        : `Removed ${params.card_ids.length} card(s) from queue.`;
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
+      };
+    } catch (error) {
+      return { content: [{ type: "text", text: formatError(error) }] };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_reorder_queue
+// ============================================================================
+server.registerTool(
+  TOOL_REORDER_QUEUE,
+  {
+    title: "Reorder Queue Cards",
+    description: "Set queue card order using an ordered card ID list.",
+    inputSchema: schemas.ReorderQueueSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.ReorderQueueInput) => {
+    try {
+      const client = getClient();
+      const response = await client.dispatch("handQueue/setCardOrders", { cardIds: params.card_ids });
+      const payload = { card_ids: params.card_ids, response };
+      const text = params.response_format === ResponseFormat.JSON
+        ? JSON.stringify(payload, null, 2)
+        : `Queue order updated for ${params.card_ids.length} card(s).`;
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
+      };
+    } catch (error) {
+      return { content: [{ type: "text", text: formatError(error) }] };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_upvote_card
+// ============================================================================
+server.registerTool(
+  TOOL_UPVOTE_CARD,
+  {
+    title: "Upvote Card",
+    description: "Upvote a card.",
+    inputSchema: schemas.UpvoteCardSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.UpvoteCardInput) => {
+    try {
+      const client = getClient();
+      const response = await client.dispatch("votes/vote", { cardId: params.card_id });
+      const payload = { card_id: params.card_id, response };
+      const text = params.response_format === ResponseFormat.JSON
+        ? JSON.stringify(payload, null, 2)
+        : `Card ${params.card_id} upvoted.`;
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
+      };
+    } catch (error) {
+      return { content: [{ type: "text", text: formatError(error) }] };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_remove_card_upvote
+// ============================================================================
+server.registerTool(
+  TOOL_REMOVE_CARD_UPVOTE,
+  {
+    title: "Remove Card Upvote",
+    description: "Remove your upvote from a card (by card_id or upvote_id).",
+    inputSchema: schemas.RemoveCardUpvoteSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.RemoveCardUpvoteInput) => {
+    try {
+      const client = getClient();
+      let upvoteId = params.upvote_id;
+      if (!upvoteId && params.card_id) {
+        upvoteId = await resolveOwnCardUpvoteId(client, params.card_id);
+      }
+      if (!upvoteId) {
+        return {
+          content: [{ type: "text", text: "Error: No upvote found to remove for the provided input." }]
+        };
+      }
+      const response = await client.dispatch("votes/unvote", { id: upvoteId });
+      const payload = { upvote_id: upvoteId, card_id: params.card_id, response };
+      const text = params.response_format === ResponseFormat.JSON
+        ? JSON.stringify(payload, null, 2)
+        : `Removed upvote ${upvoteId}.`;
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
+      };
+    } catch (error) {
+      return { content: [{ type: "text", text: formatError(error) }] };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_subscribe_card
+// ============================================================================
+server.registerTool(
+  TOOL_SUBSCRIBE_CARD,
+  {
+    title: "Subscribe to Card",
+    description: "Subscribe to card updates.",
+    inputSchema: schemas.SubscribeCardSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.SubscribeCardInput) => {
+    try {
+      const client = getClient();
+      const response = await client.dispatch("watchings/addCard", { cardId: params.card_id });
+      const payload = { card_id: params.card_id, response };
+      const text = params.response_format === ResponseFormat.JSON
+        ? JSON.stringify(payload, null, 2)
+        : `Subscribed to card ${params.card_id}.`;
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
+      };
+    } catch (error) {
+      return { content: [{ type: "text", text: formatError(error) }] };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_unsubscribe_card
+// ============================================================================
+server.registerTool(
+  TOOL_UNSUBSCRIBE_CARD,
+  {
+    title: "Unsubscribe from Card",
+    description: "Unsubscribe from card updates.",
+    inputSchema: schemas.UnsubscribeCardSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.UnsubscribeCardInput) => {
+    try {
+      const client = getClient();
+      const response = await client.dispatch("watchings/removeCard", { cardId: params.card_id });
+      const payload = { card_id: params.card_id, response };
+      const text = params.response_format === ResponseFormat.JSON
+        ? JSON.stringify(payload, null, 2)
+        : `Unsubscribed from card ${params.card_id}.`;
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
+      };
+    } catch (error) {
+      return { content: [{ type: "text", text: formatError(error) }] };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_subscribe_deck
+// ============================================================================
+server.registerTool(
+  TOOL_SUBSCRIBE_DECK,
+  {
+    title: "Subscribe to Deck",
+    description: "Subscribe to deck updates.",
+    inputSchema: schemas.SubscribeDeckSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.SubscribeDeckInput) => {
+    try {
+      const client = getClient();
+      const response = await client.dispatch("watchings/addDeck", { id: params.deck_id });
+      const payload = { deck_id: params.deck_id, response };
+      const text = params.response_format === ResponseFormat.JSON
+        ? JSON.stringify(payload, null, 2)
+        : `Subscribed to deck ${params.deck_id}.`;
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
+      };
+    } catch (error) {
+      return { content: [{ type: "text", text: formatError(error) }] };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_unsubscribe_deck
+// ============================================================================
+server.registerTool(
+  TOOL_UNSUBSCRIBE_DECK,
+  {
+    title: "Unsubscribe from Deck",
+    description: "Unsubscribe from deck updates.",
+    inputSchema: schemas.UnsubscribeDeckSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.UnsubscribeDeckInput) => {
+    try {
+      const client = getClient();
+      const response = await client.dispatch("watchings/removeDeck", { id: params.deck_id });
+      const payload = { deck_id: params.deck_id, response };
+      const text = params.response_format === ResponseFormat.JSON
+        ? JSON.stringify(payload, null, 2)
+        : `Unsubscribed from deck ${params.deck_id}.`;
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
+      };
+    } catch (error) {
+      return { content: [{ type: "text", text: formatError(error) }] };
+    }
+  }
+);
 // ============================================================================
 // TOOL: codecks_create_card
 // ============================================================================
@@ -1154,34 +1695,8 @@ Args:
   async (params: schemas.CreateMilestoneInput) => {
     try {
       const client = getClient();
-
-      let userId = params.user_id;
-      if (!userId) {
-        const userSelection: Selection[] = ["id"];
-        const userQuery = buildRootQuery(schema, "loggedInUser", userSelection);
-        const userResponse = await client.query(userQuery);
-        const user = denormalizeRootRelation(
-          schema,
-          userResponse as Record<string, any>,
-          "loggedInUser",
-          userSelection
-        ) as Record<string, unknown> | null;
-        userId = typeof user?.id === "string" ? user.id : undefined;
-      }
-
-      let accountId = params.account_id;
-      if (!accountId) {
-        const accountSelection: Selection[] = ["id"];
-        const accountQuery = buildRootQuery(schema, "account", accountSelection);
-        const accountResponse = await client.query(accountQuery);
-        const account = denormalizeRootRelation(
-          schema,
-          accountResponse as Record<string, any>,
-          "account",
-          accountSelection
-        ) as Record<string, unknown> | null;
-        accountId = typeof account?.id === "string" ? account.id : undefined;
-      }
+      const userId = params.user_id || await resolveCurrentUserId(client);
+      const accountId = params.account_id || await resolveAccountId(client);
 
       if (!userId || !accountId) {
         return {
@@ -1338,6 +1853,228 @@ Args:
           project_ids: projectIds,
           response: updateResponse
         }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(error) }]
+      };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_update_milestone
+// ============================================================================
+server.registerTool(
+  TOOL_UPDATE_MILESTONE,
+  {
+    title: "Update Codecks Milestone",
+    description: `Update an existing milestone.
+
+Args:
+  - milestone_id (string): Milestone ID to update
+  - name, color, date, start_date, hand_sync_enabled, is_global (optional): Updated fields
+  - project_ids (string[], optional): Full linked project ID set (requires is_global; auto-resolved if omitted)
+  - response_format ('markdown' | 'json'): Output format`,
+    inputSchema: schemas.UpdateMilestoneSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.UpdateMilestoneInput) => {
+    try {
+      const client = getClient();
+      const data: Record<string, unknown> = {
+        sessionId: params.session_id || undefined,
+        id: params.milestone_id
+      };
+
+      if (params.name !== undefined) data.name = params.name;
+      if (params.color !== undefined) data.color = params.color;
+      if (params.date !== undefined) data.date = params.date;
+      if (params.start_date !== undefined) data.startDate = params.start_date;
+      if (params.hand_sync_enabled !== undefined) data.handSyncEnabled = params.hand_sync_enabled;
+
+      if (params.project_ids !== undefined) {
+        let isGlobal = params.is_global;
+        if (isGlobal === undefined) {
+          const milestoneSelection: Selection[] = ["isGlobal"];
+          const query = buildIdQuery(schema, "milestone", [params.milestone_id], milestoneSelection);
+          const response = await client.query(query);
+          const milestone = denormalizeById(
+            schema,
+            response as Record<string, any>,
+            "milestone",
+            params.milestone_id,
+            milestoneSelection
+          ) as Record<string, unknown> | null;
+          isGlobal = typeof milestone?.isGlobal === "boolean" ? milestone.isGlobal : undefined;
+        }
+        if (isGlobal === undefined) {
+          return {
+            content: [{
+              type: "text",
+              text: "Error: Unable to resolve milestone is_global value required for project_ids update."
+            }]
+          };
+        }
+        data.isGlobal = isGlobal;
+        data.projectIds = params.project_ids;
+      } else if (params.is_global !== undefined) {
+        data.isGlobal = params.is_global;
+      }
+
+      const response = await client.dispatch("milestones/update", data);
+      const payload = { milestone_id: params.milestone_id, response };
+      const text = params.response_format === ResponseFormat.JSON
+        ? JSON.stringify(payload, null, 2)
+        : `Milestone ${params.milestone_id} updated successfully.`;
+
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(error) }]
+      };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_delete_milestone
+// ============================================================================
+server.registerTool(
+  TOOL_DELETE_MILESTONE,
+  {
+    title: "Delete Codecks Milestone",
+    description: "Delete/archive a milestone via milestones/delete.",
+    inputSchema: schemas.DeleteMilestoneSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.DeleteMilestoneInput) => {
+    try {
+      const client = getClient();
+      const response = await client.dispatch("milestones/delete", { id: params.milestone_id });
+      const payload = { milestone_id: params.milestone_id, deleted: true, response };
+      const text = params.response_format === ResponseFormat.JSON
+        ? JSON.stringify(payload, null, 2)
+        : `Milestone ${params.milestone_id} deleted successfully.`;
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(error) }]
+      };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_unlink_milestone_project
+// ============================================================================
+server.registerTool(
+  TOOL_UNLINK_MILESTONE_PROJECT,
+  {
+    title: "Unlink Milestone from Project",
+    description: "Remove an existing milestone-project link.",
+    inputSchema: schemas.UnlinkMilestoneProjectSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.UnlinkMilestoneProjectInput) => {
+    try {
+      const client = getClient();
+      const milestoneSelection: Selection[] = [
+        "id",
+        "isGlobal",
+        { milestoneProjects: [{ project: ["id"] }] }
+      ];
+      const query = buildIdQuery(schema, "milestone", [params.milestone_id], milestoneSelection);
+      const response = await client.query(query);
+      const milestone = denormalizeById(
+        schema,
+        response as Record<string, any>,
+        "milestone",
+        params.milestone_id,
+        milestoneSelection
+      ) as Record<string, unknown> | null;
+
+      if (!milestone) {
+        return {
+          content: [{
+            type: "text",
+            text: `Error: Milestone with ID '${params.milestone_id}' not found.`
+          }]
+        };
+      }
+
+      const existingProjectIds = ((milestone.milestoneProjects as any[]) || [])
+        .map((mp) => {
+          if (mp && typeof mp === "object") {
+            const project = (mp as Record<string, unknown>).project;
+            if (project && typeof project === "object") {
+              const id = (project as Record<string, unknown>).id;
+              return typeof id === "string" ? id : undefined;
+            }
+            return typeof project === "string" ? project : undefined;
+          }
+          return undefined;
+        })
+        .filter((id): id is string => Boolean(id));
+
+      if (!existingProjectIds.includes(params.project_id)) {
+        const payload = {
+          milestone_id: params.milestone_id,
+          project_id: params.project_id,
+          already_unlinked: true,
+          project_ids: existingProjectIds
+        };
+        const text = params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(payload, null, 2)
+          : `Milestone '${params.milestone_id}' is already unlinked from project '${params.project_id}'.`;
+        return {
+          content: [{ type: "text", text }],
+          structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
+        };
+      }
+
+      const projectIds = existingProjectIds.filter((id) => id !== params.project_id);
+      const updateResponse = await client.dispatch("milestones/update", {
+        sessionId: params.session_id || undefined,
+        id: params.milestone_id,
+        isGlobal: milestone.isGlobal,
+        projectIds
+      });
+
+      const payload = {
+        milestone_id: params.milestone_id,
+        project_id: params.project_id,
+        project_ids: projectIds,
+        response: updateResponse
+      };
+      const text = params.response_format === ResponseFormat.JSON
+        ? JSON.stringify(payload, null, 2)
+        : `Milestone '${params.milestone_id}' unlinked from project '${params.project_id}' successfully.`;
+
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
       };
     } catch (error) {
       return {
