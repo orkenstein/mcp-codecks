@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CodecksClient } from "../../src/services/codecks-client.js";
+import { spawn } from "child_process";
+import { existsSync } from "fs";
 
 const authToken = process.env.CODECKS_AUTH_TOKEN;
 const subdomain = process.env.CODECKS_ACCOUNT_SUBDOMAIN;
@@ -9,6 +11,50 @@ const maybeDescribe = authToken && subdomain ? describe : describe.skip;
 
 maybeDescribe("codecks integration (read)", () => {
   const client = new CodecksClient(authToken as string, subdomain as string);
+
+  async function callMcpTool(toolName: string, args: Record<string, unknown>) {
+    return new Promise<any>((resolve, reject) => {
+      const child = spawn("node", ["dist/index.js"], {
+        env: process.env,
+        stdio: ["pipe", "pipe", "pipe"]
+      });
+
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (d) => {
+        stdout += d.toString();
+      });
+      child.stderr.on("data", (d) => {
+        stderr += d.toString();
+      });
+
+      child.on("close", () => {
+        try {
+          const jsonLine = stdout.split("\n").find((l) => l.trim().startsWith("{"));
+          if (!jsonLine) {
+            reject(new Error(`No JSON response from MCP tool call. stderr=${stderr}`));
+            return;
+          }
+          resolve(JSON.parse(jsonLine));
+        } catch (error) {
+          reject(error);
+        }
+      });
+
+      child.stdin.write(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: {
+            name: toolName,
+            arguments: args
+          }
+        }) + "\n"
+      );
+      child.stdin.end();
+    });
+  }
 
   it("fetches current user", async () => {
     const query = {
@@ -123,6 +169,60 @@ maybeDescribe("codecks integration (read)", () => {
     };
     const getResponse: any = await client.query(getQuery);
     expect(getResponse?.milestone?.[milestoneId]?.id).toBe(milestoneId);
+  });
+
+  it("lists cards by deck via MCP tool without false-empty results", async () => {
+    if (!existsSync("dist/index.js")) {
+      return;
+    }
+
+    const rawQuery = {
+      _root: [
+        {
+          account: [
+            {
+              cards: ["title", { deck: ["id", "title"] }]
+            }
+          ]
+        }
+      ]
+    };
+    const raw: any = await client.query(rawQuery);
+    const root = raw?._root;
+    const accountId = Array.isArray(root) ? root[0]?.account : root?.account;
+    const cardIds: string[] = accountId ? raw?.account?.[accountId]?.cards || [] : [];
+
+    const cardsByDeck = new Map<string, string[]>();
+    for (const cardId of cardIds) {
+      const deckId = raw?.card?.[cardId]?.deck;
+      const title = raw?.card?.[cardId]?.title;
+      if (!deckId || !title) continue;
+      const arr = cardsByDeck.get(deckId) || [];
+      arr.push(title);
+      cardsByDeck.set(deckId, arr);
+    }
+
+    const candidate = [...cardsByDeck.entries()].find(([, titles]) => titles.length > 0);
+    if (!candidate) {
+      return;
+    }
+
+    const [deckId, expectedTitles] = candidate;
+    const result = await callMcpTool("codecks_list_cards", {
+      deck_id: deckId,
+      limit: 100,
+      offset: 0,
+      response_format: "json"
+    });
+
+    expect(result?.result?.isError).not.toBe(true);
+    const listedCards = result?.result?.structuredContent?.cards || [];
+    expect(listedCards.length).toBeGreaterThan(0);
+    expect(listedCards.length).toBe(Math.min(100, expectedTitles.length));
+    for (const card of listedCards) {
+      const listedDeckId = typeof card?.deck === "object" ? card.deck?.id : card?.deck;
+      expect(listedDeckId).toBe(deckId);
+    }
   });
 });
 

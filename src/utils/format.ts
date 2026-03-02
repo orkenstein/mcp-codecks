@@ -26,7 +26,7 @@ export function formatCard(card: any, format: ResponseFormat): string {
   }
 
   if (card.deck) {
-    lines.push(`**Deck**: ${card.deck.name}`);
+    lines.push(`**Deck**: ${card.deck.name || card.deck.title || card.deck.id || card.deck}`);
   }
 
   if (card.milestone) {
@@ -111,7 +111,7 @@ export function formatCardList(cards: any[], format: ResponseFormat, meta?: any)
       lines.push(`- **Assignee**: ${card.assignee.name}`);
     }
     if (card.deck) {
-      lines.push(`- **Deck**: ${card.deck.name}`);
+      lines.push(`- **Deck**: ${card.deck.name || card.deck.title || card.deck.id || card.deck}`);
     }
     if (card.effort !== undefined) {
       lines.push(`- **Effort**: ${card.effort}`);

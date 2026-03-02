@@ -62,6 +62,24 @@ describe("format utilities", () => {
     expect(output).toContain("# Cards");
   });
 
+  it("formats card and card list when deck has title but no name", () => {
+    const card = {
+      id: "c1",
+      accountSeq: 7,
+      title: "Card",
+      derivedStatus: "started",
+      deck: { id: "d1", title: "Movement Abilities" },
+      createdAt: new Date("2025-01-01T00:00:00Z").toISOString(),
+      lastUpdatedAt: new Date("2025-01-02T00:00:00Z").toISOString()
+    };
+
+    const single = formatCard(card, ResponseFormat.MARKDOWN);
+    expect(single).toContain("Movement Abilities");
+
+    const list = formatCardList([card], ResponseFormat.MARKDOWN);
+    expect(list).toContain("Movement Abilities");
+  });
+
   it("formats deck and deck list", () => {
     const deck = {
       id: "d1",

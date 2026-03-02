@@ -154,8 +154,6 @@ Error Handling:
         filters.content = { op: "search", value: params.search };
       }
 
-      // Note: 'cardId' is automatically included in response
-      // Cannot request 'id' field - causes 500 error
       const cardSelection: Selection[] = [
         "accountSeq",
         "title",
@@ -163,10 +161,11 @@ Error Handling:
         "derivedStatus",
         "effort",
         "priority",
-        "deckId",
-        "milestoneId",
         "createdAt",
-        "lastUpdatedAt"
+        "lastUpdatedAt",
+        { deck: ["id", "title"] },
+        { milestone: ["id", "name"] },
+        { assignee: ["id", "name"] }
       ];
 
       const cardsKey = buildRelationKey("cards", {
@@ -178,20 +177,84 @@ Error Handling:
 
       const accountSelection: Selection[] = [{ [cardsKey]: cardSelection }];
       const query = buildRootQuery(schema, "account", accountSelection);
+      let cards: any[] = [];
+      let totalMatching = 0;
+      let usedFallback = false;
+      let primaryError: unknown;
 
-      const response = await client.query(query);
-      const account = denormalizeRootRelation(schema, response as Record<string, any>, "account", accountSelection);
-      const cards = account?.cards || [];
+      try {
+        const response = await client.query(query);
+        const account = denormalizeRootRelation(schema, response as Record<string, any>, "account", accountSelection);
+        cards = account?.cards || [];
+        totalMatching = cards.length;
+      } catch (error) {
+        primaryError = error;
+      }
+
+      // Some Codecks accounts return empty results for cards(...) queries with filters/order/limit
+      // even when cards exist. Fallback to unfiltered cards relation and apply filters client-side.
+      if (cards.length === 0) {
+        try {
+          const fallbackAccountSelection: Selection[] = [{ cards: cardSelection }];
+          const fallbackQuery = buildRootQuery(schema, "account", fallbackAccountSelection);
+          const fallbackResponse = await client.query(fallbackQuery);
+          const fallbackAccount = denormalizeRootRelation(
+            schema,
+            fallbackResponse as Record<string, any>,
+            "account",
+            fallbackAccountSelection
+          );
+          const allCards = fallbackAccount?.cards || [];
+
+          const searchLower = params.search?.toLowerCase();
+          const filtered = allCards.filter((card: any) => {
+            const deckId = typeof card?.deck === "object" ? card.deck?.id : card?.deck;
+            const milestoneId = typeof card?.milestone === "object" ? card.milestone?.id : card?.milestone;
+            const assigneeId = typeof card?.assignee === "object" ? card.assignee?.id : card?.assignee;
+
+            if (params.deck_id && deckId !== params.deck_id) return false;
+            if (params.milestone_id && milestoneId !== params.milestone_id) return false;
+            if (params.assignee_id && assigneeId !== params.assignee_id) return false;
+            if (params.status && card?.derivedStatus !== params.status) return false;
+            if (searchLower) {
+              const haystack = `${card?.title || ""}\n${card?.content || ""}`.toLowerCase();
+              if (!haystack.includes(searchLower)) return false;
+            }
+            return true;
+          });
+
+          filtered.sort((a: any, b: any) => {
+            const aTs = Date.parse(a?.lastUpdatedAt || a?.createdAt || 0);
+            const bTs = Date.parse(b?.lastUpdatedAt || b?.createdAt || 0);
+            return bTs - aTs;
+          });
+
+          totalMatching = filtered.length;
+          cards = filtered.slice(params.offset, params.offset + params.limit);
+          usedFallback = true;
+        } catch (fallbackError) {
+          if (primaryError) {
+            throw primaryError;
+          }
+          throw fallbackError;
+        }
+      }
 
       // Calculate pagination metadata
-      // Note: has_more is a heuristic based on result count. If total items is
-      // exactly a multiple of limit, this may return true on the last page.
-      const meta = {
-        count: cards.length,
-        offset: params.offset,
-        has_more: cards.length === params.limit,
-        ...(cards.length === params.limit ? { next_offset: params.offset + params.limit } : {})
-      };
+      // For fallback mode we know the exact filtered total; otherwise retain heuristic.
+      const meta = usedFallback
+        ? {
+            count: cards.length,
+            offset: params.offset,
+            has_more: params.offset + params.limit < totalMatching,
+            ...(params.offset + params.limit < totalMatching ? { next_offset: params.offset + params.limit } : {})
+          }
+        : {
+            count: cards.length,
+            offset: params.offset,
+            has_more: cards.length === params.limit,
+            ...(cards.length === params.limit ? { next_offset: params.offset + params.limit } : {})
+          };
 
       const formatted = format.formatCardList(cards, params.response_format, meta);
       const { content, truncated } = format.checkAndTruncate(formatted, cards.length);
