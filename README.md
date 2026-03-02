@@ -105,6 +105,8 @@ Tool names use snake_case model names (e.g., `codecks_list_account_user_setting`
 - `codecks_set_project_visibility` - Update project visibility (use `deleted` to remove)
 - `codecks_list_milestones` - List all milestones with due dates
 - `codecks_get_milestone` - Get detailed information about a specific milestone
+- `codecks_create_milestone` - Create a milestone and attach it to project(s)
+- `codecks_create_milestone_project` - Link an existing milestone to an additional project
 
 ### User Operations
 

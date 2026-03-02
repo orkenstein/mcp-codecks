@@ -153,6 +153,23 @@ export const GetMilestoneSchema = z.object({
   milestone_id: z.string().describe("The milestone ID to retrieve"),
   response_format: ResponseFormatSchema
 }).strict();
+export const CreateMilestoneSchema = z.object({
+  name: z.string().min(1).describe("Milestone name"),
+  color: z.string().min(1).default("pink").describe("Milestone color label (e.g. pink, blue, green)"),
+  date: z.string().describe("Milestone due date in YYYY-MM-DD format"),
+  start_date: z.string().optional().describe("Optional start date in YYYY-MM-DD format"),
+  is_global: z.boolean().default(false).describe("Whether the milestone should be globally visible"),
+  project_ids: z.array(z.string()).min(1).describe("Project IDs linked to this milestone"),
+  user_id: z.string().optional().describe("Creator user ID (auto-resolved if omitted)"),
+  account_id: z.string().optional().describe("Account ID (auto-resolved if omitted)"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
+}).strict();
+
+export const CreateMilestoneProjectSchema = z.object({
+  milestone_id: z.string().describe("Milestone ID to link"),
+  project_id: z.string().describe("Project ID to link to the milestone"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
+}).strict();
 
 // User schema
 export const GetCurrentUserSchema = z.object({
@@ -174,4 +191,6 @@ export type CreateProjectInput = z.infer<typeof CreateProjectSchema>;
 export type SetProjectVisibilityInput = z.infer<typeof SetProjectVisibilitySchema>;
 export type ListMilestonesInput = z.infer<typeof ListMilestonesSchema>;
 export type GetMilestoneInput = z.infer<typeof GetMilestoneSchema>;
+export type CreateMilestoneInput = z.infer<typeof CreateMilestoneSchema>;
+export type CreateMilestoneProjectInput = z.infer<typeof CreateMilestoneProjectSchema>;
 export type GetCurrentUserInput = z.infer<typeof GetCurrentUserSchema>;

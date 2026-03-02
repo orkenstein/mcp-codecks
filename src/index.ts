@@ -50,6 +50,8 @@ const TOOL_CREATE_PROJECT = "codecks_create_project";
 const TOOL_SET_PROJECT_VISIBILITY = "codecks_set_project_visibility";
 const TOOL_LIST_MILESTONES = "codecks_list_milestones";
 const TOOL_GET_MILESTONE = "codecks_get_milestone";
+const TOOL_CREATE_MILESTONE = "codecks_create_milestone";
+const TOOL_CREATE_MILESTONE_PROJECT = "codecks_create_milestone_project";
 const TOOL_GET_CURRENT_USER = "codecks_get_current_user";
 
 const manualTools = new Set<string>([
@@ -67,6 +69,8 @@ const manualTools = new Set<string>([
   TOOL_SET_PROJECT_VISIBILITY,
   TOOL_LIST_MILESTONES,
   TOOL_GET_MILESTONE,
+  TOOL_CREATE_MILESTONE,
+  TOOL_CREATE_MILESTONE_PROJECT,
   TOOL_GET_CURRENT_USER
 ]);
 
@@ -1111,6 +1115,229 @@ Returns:
       return {
         content: [{ type: "text", text: formatted }],
         structuredContent: params.response_format === ResponseFormat.JSON ? milestone : undefined
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(error) }]
+      };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_create_milestone
+// ============================================================================
+server.registerTool(
+  TOOL_CREATE_MILESTONE,
+  {
+    title: "Create Codecks Milestone",
+    description: `Create a new milestone and link it to one or more projects.
+
+Args:
+  - name (string): Milestone name
+  - color (string): Milestone color label (default: pink)
+  - date (string): Due date in YYYY-MM-DD format
+  - start_date (string, optional): Start date in YYYY-MM-DD format
+  - is_global (boolean): Whether milestone is global (default: false)
+  - project_ids (string[]): Project IDs to link to this milestone
+  - user_id (string, optional): Creator user ID (auto-resolved if omitted)
+  - account_id (string, optional): Account ID (auto-resolved if omitted)
+  - session_id (string, optional): Client session ID from web app`,
+    inputSchema: schemas.CreateMilestoneSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.CreateMilestoneInput) => {
+    try {
+      const client = getClient();
+
+      let userId = params.user_id;
+      if (!userId) {
+        const userSelection: Selection[] = ["id"];
+        const userQuery = buildRootQuery(schema, "loggedInUser", userSelection);
+        const userResponse = await client.query(userQuery);
+        const user = denormalizeRootRelation(
+          schema,
+          userResponse as Record<string, any>,
+          "loggedInUser",
+          userSelection
+        ) as Record<string, unknown> | null;
+        userId = typeof user?.id === "string" ? user.id : undefined;
+      }
+
+      let accountId = params.account_id;
+      if (!accountId) {
+        const accountSelection: Selection[] = ["id"];
+        const accountQuery = buildRootQuery(schema, "account", accountSelection);
+        const accountResponse = await client.query(accountQuery);
+        const account = denormalizeRootRelation(
+          schema,
+          accountResponse as Record<string, any>,
+          "account",
+          accountSelection
+        ) as Record<string, unknown> | null;
+        accountId = typeof account?.id === "string" ? account.id : undefined;
+      }
+
+      if (!userId || !accountId) {
+        return {
+          content: [{
+            type: "text",
+            text: "Error: Unable to resolve required user/account IDs for milestone creation."
+          }]
+        };
+      }
+
+      const data: Record<string, unknown> = {
+        sessionId: params.session_id || undefined,
+        userId,
+        accountId,
+        name: params.name,
+        color: params.color,
+        date: params.date,
+        isGlobal: params.is_global,
+        projectIds: params.project_ids
+      };
+
+      if (params.start_date) {
+        data.startDate = params.start_date;
+      }
+
+      const response = await client.dispatch("milestones/create", data);
+      const responseRecord = (response ?? {}) as Record<string, unknown>;
+      const payload = responseRecord.payload as Record<string, unknown> | undefined;
+      const milestoneId =
+        (typeof responseRecord.milestoneId === "string" ? responseRecord.milestoneId : undefined) ||
+        (typeof responseRecord.id === "string" ? responseRecord.id : undefined) ||
+        (payload && typeof payload.milestoneId === "string" ? payload.milestoneId : undefined) ||
+        (payload && typeof payload.id === "string" ? payload.id : undefined);
+
+      const successText = milestoneId
+        ? `Milestone created successfully. ID: ${milestoneId}`
+        : "Milestone created successfully.";
+
+      return {
+        content: [{ type: "text", text: successText }],
+        structuredContent: {
+          ...responseRecord,
+          ...(milestoneId ? { milestoneId } : {})
+        }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(error) }]
+      };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_create_milestone_project
+// ============================================================================
+server.registerTool(
+  TOOL_CREATE_MILESTONE_PROJECT,
+  {
+    title: "Link Milestone to Project",
+    description: `Create a milestone-project link so a project can use an existing milestone.
+
+This updates the milestone's linked project set via milestones/update.
+
+Args:
+  - milestone_id (string): Milestone ID to update
+  - project_id (string): Project ID to link
+  - session_id (string, optional): Client session ID from web app`,
+    inputSchema: schemas.CreateMilestoneProjectSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.CreateMilestoneProjectInput) => {
+    try {
+      const client = getClient();
+
+      const milestoneSelection: Selection[] = [
+        "id",
+        "isGlobal",
+        { milestoneProjects: [{ project: ["id"] }] }
+      ];
+
+      const query = buildIdQuery(schema, "milestone", [params.milestone_id], milestoneSelection);
+      const response = await client.query(query);
+      const milestone = denormalizeById(
+        schema,
+        response as Record<string, any>,
+        "milestone",
+        params.milestone_id,
+        milestoneSelection
+      ) as Record<string, unknown> | null;
+
+      if (!milestone) {
+        return {
+          content: [{
+            type: "text",
+            text: `Error: Milestone with ID '${params.milestone_id}' not found.`
+          }]
+        };
+      }
+
+      const existingProjectIds = ((milestone.milestoneProjects as any[]) || [])
+        .map((mp) => {
+          if (mp && typeof mp === "object") {
+            const project = (mp as Record<string, unknown>).project;
+            if (project && typeof project === "object") {
+              const id = (project as Record<string, unknown>).id;
+              return typeof id === "string" ? id : undefined;
+            }
+            return typeof project === "string" ? project : undefined;
+          }
+          return undefined;
+        })
+        .filter((id): id is string => Boolean(id));
+
+      if (existingProjectIds.includes(params.project_id)) {
+        return {
+          content: [{
+            type: "text",
+            text: `Milestone '${params.milestone_id}' is already linked to project '${params.project_id}'.`
+          }],
+          structuredContent: {
+            milestone_id: params.milestone_id,
+            project_id: params.project_id,
+            already_linked: true,
+            project_ids: existingProjectIds
+          }
+        };
+      }
+
+      const projectIds = [...new Set([...existingProjectIds, params.project_id])];
+
+      const data: Record<string, unknown> = {
+        sessionId: params.session_id || undefined,
+        id: params.milestone_id,
+        isGlobal: milestone.isGlobal,
+        projectIds
+      };
+
+      const updateResponse = await client.dispatch("milestones/update", data);
+
+      return {
+        content: [{
+          type: "text",
+          text: `Milestone '${params.milestone_id}' linked to project '${params.project_id}' successfully.`
+        }],
+        structuredContent: {
+          milestone_id: params.milestone_id,
+          project_id: params.project_id,
+          project_ids: projectIds,
+          response: updateResponse
+        }
       };
     } catch (error) {
       return {

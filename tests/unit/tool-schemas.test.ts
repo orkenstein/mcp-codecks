@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   AddDecksToSpaceAfterSchema,
   BulkUpdateCardsSchema,
+  CreateMilestoneProjectSchema,
+  CreateMilestoneSchema,
   CreateCardSchema,
   CreateDeckSchema,
   CreateProjectSchema,
@@ -63,6 +65,24 @@ describe("tool schemas", () => {
       template_id: "cdx/survival"
     };
     expect(() => CreateProjectSchema.parse(value)).not.toThrow();
+  });
+  it("validates create milestone inputs", () => {
+    const value = {
+      name: "Prototype",
+      color: "pink",
+      date: "2026-12-31",
+      is_global: false,
+      project_ids: ["project-1"]
+    };
+    expect(() => CreateMilestoneSchema.parse(value)).not.toThrow();
+  });
+
+  it("validates create milestone-project link inputs", () => {
+    const value = {
+      milestone_id: "milestone-1",
+      project_id: "project-1"
+    };
+    expect(() => CreateMilestoneProjectSchema.parse(value)).not.toThrow();
   });
 
   it("validates set project visibility inputs", () => {
