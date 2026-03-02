@@ -562,6 +562,9 @@ server.registerTool(
 
 Args:
   - card_id (string): Hero/journey parent card ID
+  - user_id (string, optional): Actor user ID (auto-resolved if omitted)
+  - account_id (string, optional): Actor account ID (auto-resolved if omitted)
+  - session_id (string, optional): Client session ID from web app
   - response_format ('markdown' | 'json'): Output format (default: 'markdown')
 
 Returns:
@@ -577,11 +580,19 @@ Returns:
   async (params: schemas.StartJourneyInput) => {
     try {
       const client = getClient();
+      const userId = params.user_id || await resolveCurrentUserId(client);
+      const accountId = params.account_id || await resolveAccountId(client);
+      const baseData: Record<string, unknown> = {};
+      if (params.session_id) baseData.sessionId = params.session_id;
+      if (userId) baseData.userId = userId;
+      if (accountId) baseData.accountId = accountId;
       const response = await client.dispatch("workflows/apply", {
+        ...baseData,
         cardId: params.card_id
       });
       const payload = {
         card_id: params.card_id,
+        request_id_key: "cardId",
         response
       };
       const text = params.response_format === ResponseFormat.JSON
@@ -618,7 +629,17 @@ server.registerTool(
   async (params: schemas.AddToHandInput) => {
     try {
       const client = getClient();
-      const response = await client.dispatch("bookmarks/addCards", { ids: params.card_ids });
+      const userId = params.user_id || await resolveCurrentUserId(client);
+      if (!userId) {
+        return {
+          content: [{ type: "text", text: "Error: Unable to resolve required user_id for add_to_hand." }]
+        };
+      }
+      const response = await client.dispatch("bookmarks/addCards", {
+        sessionId: params.session_id || undefined,
+        userId,
+        ids: params.card_ids
+      });
       const payload = { card_ids: params.card_ids, response };
       const text = params.response_format === ResponseFormat.JSON
         ? JSON.stringify(payload, null, 2)
@@ -652,7 +673,17 @@ server.registerTool(
   async (params: schemas.RemoveFromHandInput) => {
     try {
       const client = getClient();
-      const response = await client.dispatch("bookmarks/removeCards", { ids: params.card_ids });
+      const userId = params.user_id || await resolveCurrentUserId(client);
+      if (!userId) {
+        return {
+          content: [{ type: "text", text: "Error: Unable to resolve required user_id for remove_from_hand." }]
+        };
+      }
+      const response = await client.dispatch("bookmarks/removeCards", {
+        sessionId: params.session_id || undefined,
+        userId,
+        ids: params.card_ids
+      });
       const payload = { card_ids: params.card_ids, response };
       const text = params.response_format === ResponseFormat.JSON
         ? JSON.stringify(payload, null, 2)
@@ -686,7 +717,22 @@ server.registerTool(
   async (params: schemas.AddToQueueInput) => {
     try {
       const client = getClient();
-      const response = await client.dispatch("handQueue/addCardsToOwner", { cardIds: params.card_ids });
+      const accountId = params.account_id || await resolveAccountId(client);
+      const userId = params.user_id || await resolveCurrentUserId(client);
+      if (!accountId) {
+        return {
+          content: [{ type: "text", text: "Error: Unable to resolve required account_id for add_to_queue." }]
+        };
+      }
+      const data: Record<string, unknown> = {
+        sessionId: params.session_id || undefined,
+        cardIds: params.card_ids,
+        accountId
+      };
+      if (userId) {
+        data.userId = userId;
+      }
+      const response = await client.dispatch("handQueue/addCardsToOwner", data);
       const payload = { card_ids: params.card_ids, response };
       const text = params.response_format === ResponseFormat.JSON
         ? JSON.stringify(payload, null, 2)
@@ -720,7 +766,19 @@ server.registerTool(
   async (params: schemas.RemoveFromQueueInput) => {
     try {
       const client = getClient();
-      const response = await client.dispatch("handQueue/removeCards", { cardIds: params.card_ids });
+      const accountId = params.account_id || await resolveAccountId(client);
+      const userId = params.user_id || await resolveCurrentUserId(client);
+      const data: Record<string, unknown> = {
+        sessionId: params.session_id || undefined,
+        cardIds: params.card_ids
+      };
+      if (accountId) {
+        data.accountId = accountId;
+      }
+      if (userId) {
+        data.userId = userId;
+      }
+      const response = await client.dispatch("handQueue/removeCards", data);
       const payload = { card_ids: params.card_ids, response };
       const text = params.response_format === ResponseFormat.JSON
         ? JSON.stringify(payload, null, 2)
@@ -742,7 +800,7 @@ server.registerTool(
   TOOL_REORDER_QUEUE,
   {
     title: "Reorder Queue Cards",
-    description: "Set queue card order using an ordered card ID list.",
+    description: "Set queue card order using an ordered card ID list and dragged subset.",
     inputSchema: schemas.ReorderQueueSchema,
     annotations: {
       readOnlyHint: false,
@@ -754,7 +812,23 @@ server.registerTool(
   async (params: schemas.ReorderQueueInput) => {
     try {
       const client = getClient();
-      const response = await client.dispatch("handQueue/setCardOrders", { cardIds: params.card_ids });
+      const userId = params.user_id || await resolveCurrentUserId(client);
+      const accountId = params.account_id || await resolveAccountId(client);
+      if (!userId) {
+        return {
+          content: [{ type: "text", text: "Error: Unable to resolve required user_id for reorder_queue." }]
+        };
+      }
+      const data: Record<string, unknown> = {
+        sessionId: params.session_id || undefined,
+        cardIds: params.card_ids,
+        draggedCardIds: params.dragged_card_ids,
+        userId
+      };
+      if (accountId) {
+        data.accountId = accountId;
+      }
+      const response = await client.dispatch("handQueue/setCardOrders", data);
       const payload = { card_ids: params.card_ids, response };
       const text = params.response_format === ResponseFormat.JSON
         ? JSON.stringify(payload, null, 2)
@@ -865,7 +939,17 @@ server.registerTool(
   async (params: schemas.SubscribeCardInput) => {
     try {
       const client = getClient();
-      const response = await client.dispatch("watchings/addCard", { cardId: params.card_id });
+      const userId = params.user_id || await resolveCurrentUserId(client);
+      if (!userId) {
+        return {
+          content: [{ type: "text", text: "Error: Unable to resolve required user_id for subscribe_card." }]
+        };
+      }
+      const response = await client.dispatch("watchings/addCard", {
+        sessionId: params.session_id || undefined,
+        userId,
+        cardId: params.card_id
+      });
       const payload = { card_id: params.card_id, response };
       const text = params.response_format === ResponseFormat.JSON
         ? JSON.stringify(payload, null, 2)
@@ -899,7 +983,17 @@ server.registerTool(
   async (params: schemas.UnsubscribeCardInput) => {
     try {
       const client = getClient();
-      const response = await client.dispatch("watchings/removeCard", { cardId: params.card_id });
+      const userId = params.user_id || await resolveCurrentUserId(client);
+      if (!userId) {
+        return {
+          content: [{ type: "text", text: "Error: Unable to resolve required user_id for unsubscribe_card." }]
+        };
+      }
+      const response = await client.dispatch("watchings/removeCard", {
+        sessionId: params.session_id || undefined,
+        userId,
+        cardId: params.card_id
+      });
       const payload = { card_id: params.card_id, response };
       const text = params.response_format === ResponseFormat.JSON
         ? JSON.stringify(payload, null, 2)
@@ -933,7 +1027,17 @@ server.registerTool(
   async (params: schemas.SubscribeDeckInput) => {
     try {
       const client = getClient();
-      const response = await client.dispatch("watchings/addDeck", { id: params.deck_id });
+      const userId = params.user_id || await resolveCurrentUserId(client);
+      if (!userId) {
+        return {
+          content: [{ type: "text", text: "Error: Unable to resolve required user_id for subscribe_deck." }]
+        };
+      }
+      const response = await client.dispatch("watchings/addDeck", {
+        sessionId: params.session_id || undefined,
+        userId,
+        id: params.deck_id
+      });
       const payload = { deck_id: params.deck_id, response };
       const text = params.response_format === ResponseFormat.JSON
         ? JSON.stringify(payload, null, 2)
@@ -967,7 +1071,17 @@ server.registerTool(
   async (params: schemas.UnsubscribeDeckInput) => {
     try {
       const client = getClient();
-      const response = await client.dispatch("watchings/removeDeck", { id: params.deck_id });
+      const userId = params.user_id || await resolveCurrentUserId(client);
+      if (!userId) {
+        return {
+          content: [{ type: "text", text: "Error: Unable to resolve required user_id for unsubscribe_deck." }]
+        };
+      }
+      const response = await client.dispatch("watchings/removeDeck", {
+        sessionId: params.session_id || undefined,
+        userId,
+        id: params.deck_id
+      });
       const payload = { deck_id: params.deck_id, response };
       const text = params.response_format === ResponseFormat.JSON
         ? JSON.stringify(payload, null, 2)
@@ -1555,6 +1669,7 @@ server.registerTool(
 Retrieves all milestones (delivery date markers) from your Codecks organization.
 
 Args:
+  - include_deleted (boolean): Include deleted milestones (default: false)
   - response_format ('markdown' | 'json'): Output format (default: 'markdown')
 
 Returns:
@@ -1572,13 +1687,16 @@ Returns:
       const client = getClient();
 
       // Codecks uses `date` rather than `dueDate`.
-      const milestoneSelection: Selection[] = ["id", "name", "description", "date", "startDate"];
+      const milestoneSelection: Selection[] = ["id", "name", "description", "date", "startDate", "isDeleted"];
       const accountSelection: Selection[] = [{ milestones: milestoneSelection }];
       const query = buildRootQuery(schema, "account", accountSelection);
 
       const response = await client.query(query);
       const account = denormalizeRootRelation(schema, response as Record<string, any>, "account", accountSelection);
-      const milestones = account?.milestones || [];
+      let milestones = account?.milestones || [];
+      if (!params.include_deleted) {
+        milestones = milestones.filter((milestone: Record<string, unknown>) => milestone?.isDeleted !== true);
+      }
 
       const formatted = format.formatMilestoneList(milestones, params.response_format);
 
@@ -1610,7 +1728,8 @@ Args:
   - response_format ('markdown' | 'json'): Output format (default: 'markdown')
 
 Returns:
-  Complete milestone details including fields and relationships.`,
+  Complete milestone details including fields and relationships.
+  Note: Direct ID lookup can return deleted milestones (isDeleted=true).`,
     inputSchema: schemas.GetMilestoneSchema,
     annotations: {
       readOnlyHint: true,
@@ -1629,6 +1748,7 @@ Returns:
         "description",
         "date",
         "startDate",
+        "isDeleted",
         "createdAt"
       ];
 
@@ -1805,6 +1925,10 @@ Args:
       const existingProjectIds = ((milestone.milestoneProjects as any[]) || [])
         .map((mp) => {
           if (mp && typeof mp === "object") {
+            const directProjectId = (mp as Record<string, unknown>).projectId;
+            if (typeof directProjectId === "string") {
+              return directProjectId;
+            }
             const project = (mp as Record<string, unknown>).project;
             if (project && typeof project === "object") {
               const id = (project as Record<string, unknown>).id;
@@ -2002,6 +2126,11 @@ server.registerTool(
       const client = getClient();
       const milestoneSelection: Selection[] = [
         "id",
+        "name",
+        "color",
+        "date",
+        "startDate",
+        "handSyncEnabled",
         "isGlobal",
         { milestoneProjects: [{ project: ["id"] }] }
       ];
@@ -2027,6 +2156,10 @@ server.registerTool(
       const existingProjectIds = ((milestone.milestoneProjects as any[]) || [])
         .map((mp) => {
           if (mp && typeof mp === "object") {
+            const directProjectId = (mp as Record<string, unknown>).projectId;
+            if (typeof directProjectId === "string") {
+              return directProjectId;
+            }
             const project = (mp as Record<string, unknown>).project;
             if (project && typeof project === "object") {
               const id = (project as Record<string, unknown>).id;
@@ -2055,19 +2188,78 @@ server.registerTool(
       }
 
       const projectIds = existingProjectIds.filter((id) => id !== params.project_id);
-      const updateResponse = await client.dispatch("milestones/update", {
+      const resolvedIsGlobal = typeof milestone.isGlobal === "boolean" ? milestone.isGlobal : false;
+      const nextIsGlobal = projectIds.length === 0 ? true : resolvedIsGlobal;
+      const updateData: Record<string, unknown> = {
         sessionId: params.session_id || undefined,
         id: params.milestone_id,
-        isGlobal: milestone.isGlobal,
+        isGlobal: nextIsGlobal,
         projectIds
-      });
+      };
+      if (typeof milestone.name === "string") updateData.name = milestone.name;
+      if (typeof milestone.color === "string") updateData.color = milestone.color;
+      if (typeof milestone.date === "string") updateData.date = milestone.date;
+      if (typeof milestone.startDate === "string") updateData.startDate = milestone.startDate;
+      if (typeof milestone.handSyncEnabled === "boolean") updateData.handSyncEnabled = milestone.handSyncEnabled;
+
+      let updateResponse: unknown;
+      try {
+        updateResponse = await client.dispatch("milestones/update", updateData);
+      } catch {
+        updateResponse = await client.dispatch("milestones/update", {
+          sessionId: params.session_id || undefined,
+          id: params.milestone_id,
+          isGlobal: nextIsGlobal,
+          projectIds
+        });
+      }
+
+      const verifyResponse = await client.query(
+        buildIdQuery(schema, "milestone", [params.milestone_id], milestoneSelection)
+      );
+      const verifiedMilestone = denormalizeById(
+        schema,
+        verifyResponse as Record<string, any>,
+        "milestone",
+        params.milestone_id,
+        milestoneSelection
+      ) as Record<string, unknown> | null;
+      const verifiedProjectIds = ((verifiedMilestone?.milestoneProjects as any[]) || [])
+        .map((mp) => {
+          if (mp && typeof mp === "object") {
+            const directProjectId = (mp as Record<string, unknown>).projectId;
+            if (typeof directProjectId === "string") {
+              return directProjectId;
+            }
+            const project = (mp as Record<string, unknown>).project;
+            if (project && typeof project === "object") {
+              const id = (project as Record<string, unknown>).id;
+              return typeof id === "string" ? id : undefined;
+            }
+            return typeof project === "string" ? project : undefined;
+          }
+          return undefined;
+        })
+        .filter((id): id is string => Boolean(id));
 
       const payload = {
         milestone_id: params.milestone_id,
         project_id: params.project_id,
+        is_global: nextIsGlobal,
         project_ids: projectIds,
+        verified_project_ids: verifiedProjectIds,
+        unlink_verified: !verifiedProjectIds.includes(params.project_id),
         response: updateResponse
       };
+      if (verifiedProjectIds.includes(params.project_id)) {
+        const text = params.response_format === ResponseFormat.JSON
+          ? JSON.stringify(payload, null, 2)
+          : `Warning: unlink request completed but project '${params.project_id}' is still linked to milestone '${params.milestone_id}'.`;
+        return {
+          content: [{ type: "text", text }],
+          structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
+        };
+      }
       const text = params.response_format === ResponseFormat.JSON
         ? JSON.stringify(payload, null, 2)
         : `Milestone '${params.milestone_id}' unlinked from project '${params.project_id}' successfully.`;

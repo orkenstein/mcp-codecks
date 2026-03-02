@@ -12,6 +12,7 @@ import {
   DeleteMilestoneSchema,
   DeleteCardSchema,
   ListCardsSchema,
+  ListMilestonesSchema,
   RemoveCardUpvoteSchema,
   RemoveFromHandSchema,
   RemoveFromQueueSchema,
@@ -102,24 +103,43 @@ describe("tool schemas", () => {
   });
   it("validates start journey inputs", () => {
     expect(() => StartJourneySchema.parse({ card_id: "card-1", response_format: "json" })).not.toThrow();
+    expect(() => StartJourneySchema.parse({
+      card_id: "card-1",
+      user_id: "user-1",
+      account_id: "account-1",
+      session_id: "session-1",
+      response_format: "json"
+    })).not.toThrow();
   });
 
   it("validates interaction write inputs", () => {
     expect(() => AddToHandSchema.parse({ card_ids: ["card-1"], response_format: "json" })).not.toThrow();
     expect(() => RemoveFromHandSchema.parse({ card_ids: ["card-1"], response_format: "json" })).not.toThrow();
     expect(() => AddToQueueSchema.parse({ card_ids: ["card-1"], response_format: "json" })).not.toThrow();
+    expect(() => AddToQueueSchema.parse({
+      card_ids: ["card-1"],
+      user_id: "user-1",
+      account_id: "account-1",
+      response_format: "json"
+    })).not.toThrow();
     expect(() => RemoveFromQueueSchema.parse({ card_ids: ["card-1"], response_format: "json" })).not.toThrow();
-    expect(() => ReorderQueueSchema.parse({ card_ids: ["card-1"], response_format: "json" })).not.toThrow();
+    expect(() => ReorderQueueSchema.parse({
+      card_ids: ["card-1"],
+      dragged_card_ids: ["card-1"],
+      response_format: "json"
+    })).not.toThrow();
     expect(() => UpvoteCardSchema.parse({ card_id: "card-1", response_format: "json" })).not.toThrow();
     expect(() => RemoveCardUpvoteSchema.parse({ response_format: "json" })).toThrow();
     expect(() => RemoveCardUpvoteSchema.parse({ card_id: "card-1", response_format: "json" })).not.toThrow();
     expect(() => SubscribeCardSchema.parse({ card_id: "card-1", response_format: "json" })).not.toThrow();
+    expect(() => SubscribeCardSchema.parse({ card_id: "card-1", user_id: "user-1", response_format: "json" })).not.toThrow();
     expect(() => UnsubscribeCardSchema.parse({ card_id: "card-1", response_format: "json" })).not.toThrow();
     expect(() => SubscribeDeckSchema.parse({ deck_id: "deck-1", response_format: "json" })).not.toThrow();
     expect(() => UnsubscribeDeckSchema.parse({ deck_id: "deck-1", response_format: "json" })).not.toThrow();
   });
 
   it("validates milestone lifecycle inputs", () => {
+    expect(ListMilestonesSchema.parse({ response_format: "json" }).include_deleted).toBe(false);
     expect(() => UpdateMilestoneSchema.parse({ milestone_id: "ms-1", name: "Renamed", response_format: "json" })).not.toThrow();
     expect(() => UpdateMilestoneSchema.parse({ milestone_id: "ms-1", response_format: "json" })).toThrow();
     expect(() => DeleteMilestoneSchema.parse({ milestone_id: "ms-1", response_format: "json" })).not.toThrow();

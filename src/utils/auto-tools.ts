@@ -47,7 +47,15 @@ const MODEL_SELECTION_OVERRIDES: Record<string, Selection[]> = {
   // activities7d and visits7d currently trigger upstream 500s; keep safe subset by default.
   publicProjectInfo: ["cardCount", "cardDoneStreak", "lastActivityAt"],
   // Relation-heavy activity selections can trigger upstream 500s; keep safe field-only defaults.
-  activity: ["createdAt", "type", "data"]
+  activity: ["createdAt", "type", "data"],
+  // Relation-heavy handCard selections can trigger upstream 500s; keep safe field-only defaults.
+  handCard: ["sortIndex"],
+  // Relation-heavy cardSubscription selections can trigger upstream 500s; keep safe field-only defaults.
+  cardSubscription: ["createdAt"],
+  // Requesting nested card relation fields on queueEntry can trigger upstream 500s.
+  queueEntry: ["createdAt", "sortIndex", "cardDoneAt"],
+  // Requesting nested card relation fields on cardUpvote can trigger upstream 500s.
+  cardUpvote: ["createdAt", "type", "discordUserInfo"]
 };
 const MODEL_SELECTION_ALLOWLIST: Record<string, Set<string>> = {
   publicProjectInfo: new Set(["cardCount", "cardDoneStreak", "lastActivityAt"]),
@@ -58,7 +66,17 @@ const MODEL_SELECTION_ALLOWLIST: Record<string, Set<string>> = {
     "isRemovedFromDeckEntry",
     "isRemovedFromMilestoneEntry",
     "isRemovedFromSprintEntry"
-  ])
+  ]),
+  handCard: new Set(["sortIndex"]),
+  cardSubscription: new Set(["createdAt"]),
+  queueEntry: new Set(["createdAt", "sortIndex", "cardDoneAt"]),
+  cardUpvote: new Set(["createdAt", "type", "discordUserInfo"])
+};
+const MODEL_RELATION_EXPANSION_BLOCKLIST: Record<string, Set<string>> = {
+  handCard: new Set(["card", "account", "user"]),
+  cardSubscription: new Set(["card", "account", "user"]),
+  queueEntry: new Set(["card"]),
+  cardUpvote: new Set(["card"])
 };
 const MODEL_FORCE_CLIENT_SIDE_FILTERING = new Set(["milestoneProject"]);
 const COMPATIBILITY_ALIASES: Record<string, { list: string[]; get: string[] }> = {
@@ -78,6 +96,7 @@ const AutoListSchema = z.object({
   order_by: z.string().optional().describe("Field to order by"),
   order_desc: z.boolean().default(true).describe("Whether to order descending"),
   project_id: z.string().optional().describe("Unified project filter key (mapped to projectId internally)"),
+  include_deleted: z.boolean().default(false).describe("Include deleted entities where model-specific deleted flags exist"),
   filters: z.record(z.unknown()).optional().describe("Filter object for the query"),
   selection: z.array(z.unknown()).optional().describe("Selection array (fields/relations)"),
   include_relations: z.boolean().default(false).describe("Attempt safe first-level relation expansion with guarded fallback"),
@@ -176,7 +195,11 @@ function withSafeRelationExpansion(
   }
   const relations = Object.entries(model.relations || {});
   const additions: Selection[] = [];
+  const blockedRelations = MODEL_RELATION_EXPANSION_BLOCKLIST[modelName] ?? new Set<string>();
   for (const [relationName, relationInfo] of relations) {
+    if (blockedRelations.has(relationName)) {
+      continue;
+    }
     const safeFields = getSafeFieldsForModel(schema, relationInfo.type);
     if (safeFields.length === 0) {
       continue;
@@ -199,6 +222,42 @@ function sanitizeSelectionForModel(modelName: string, selection: Selection[]): S
   }
 
   return (MODEL_SELECTION_OVERRIDES[modelName] ?? []) as Selection[];
+}
+
+function getRelationNameFromSelectionKey(key: string): string {
+  const parenIndex = key.indexOf("(");
+  return parenIndex >= 0 ? key.slice(0, parenIndex) : key;
+}
+
+function ensureMilestoneProjectSelectionForDeletionFilter(
+  schema: CodecksApiSchema,
+  selection: Selection[]
+): Selection[] {
+  const milestoneProjectModel = schema.models.milestoneProject;
+  const milestoneRelation = milestoneProjectModel?.relations?.milestone;
+  const milestoneModel = milestoneRelation ? schema.models[milestoneRelation.type] : undefined;
+  const supportsIsDeleted = Boolean(milestoneRelation && milestoneModel?.fields?.isDeleted);
+  if (!supportsIsDeleted) {
+    return selection;
+  }
+  const hasMilestoneWithIsDeleted = selection.some((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return false;
+    }
+    const [rawKey, rawValue] = Object.entries(item)[0] || [];
+    if (!rawKey || getRelationNameFromSelectionKey(rawKey) !== "milestone") {
+      return false;
+    }
+    if (Array.isArray(rawValue)) {
+      return rawValue.some((field) => field === "isDeleted");
+    }
+    return false;
+  });
+
+  if (hasMilestoneWithIsDeleted) {
+    return selection;
+  }
+  return [...selection, { milestone: ["id", "isDeleted"] }];
 }
 
 function chooseOrderField(schema: CodecksApiSchema, modelName: string): string | undefined {
@@ -515,6 +574,28 @@ function normalizeItemsForModel(modelName: string, items: any[]): any[] {
   return items.map((item) => normalizeItemForModel(modelName, item));
 }
 
+function applyModelSpecificListFiltering(
+  modelName: string,
+  items: any[],
+  includeDeleted: boolean
+): any[] {
+  if (includeDeleted) {
+    return items;
+  }
+
+  if (modelName === "milestoneProject") {
+    return items.filter((item) => {
+      const milestone = item?.milestone;
+      if (milestone && typeof milestone === "object") {
+        return (milestone as Record<string, unknown>).isDeleted !== true;
+      }
+      return true;
+    });
+  }
+
+  return items;
+}
+
 function collectPathItems(value: unknown, relations: string[]): any[] {
   if (value == null) {
     return [];
@@ -637,8 +718,12 @@ export function registerAutoTools(options: RegisterAutoToolsOptions) {
             params.selection,
             getDefaultSelection(schema, modelName)
           );
-          const baseSelection = sanitizeSelectionForModel(modelName, rawSelection);
+          let baseSelection = sanitizeSelectionForModel(modelName, rawSelection);
+          if (modelName === "milestoneProject" && params.include_deleted !== true) {
+            baseSelection = ensureMilestoneProjectSelectionForDeletionFilter(schema, baseSelection);
+          }
           const includeRelations = params.include_relations === true;
+          const includeDeleted = params.include_deleted === true;
           const selectionCandidates = includeRelations
             ? [withSafeRelationExpansion(schema, modelName, baseSelection), baseSelection]
             : [baseSelection];
@@ -759,6 +844,8 @@ export function registerAutoTools(options: RegisterAutoToolsOptions) {
             itemsToReturn = applyClientSideFilters(itemsToReturn, userFilters);
             itemsToReturn = applyClientSideOrdering(itemsToReturn, orderField, orderDesc);
           }
+
+          itemsToReturn = applyModelSpecificListFiltering(modelName, itemsToReturn, includeDeleted);
 
           if (!usedServerPagination || usedUnfilteredFallback || MODEL_FORCE_CLIENT_SIDE_FILTERING.has(modelName)) {
             itemsToReturn = applyClientSidePagination(itemsToReturn, limit, offset);

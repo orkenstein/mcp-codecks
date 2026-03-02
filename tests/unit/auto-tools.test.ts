@@ -1005,4 +1005,294 @@ describe("auto tools", () => {
     });
     expect(getResult.structuredContent.id).toBe("ac1");
   });
+
+  it("sanitizes queueEntry relation selections to avoid upstream failures", async () => {
+    const server = createServer();
+    const getClient = () => ({
+      query: async (query: any) => {
+        const serialized = JSON.stringify(query);
+        if (serialized.includes("\"card\"")) {
+          throw new Error("unsafe queueEntry relation selection");
+        }
+        const firstKey = Object.keys(query)[0] || "";
+        if (firstKey.startsWith("queueEntry(")) {
+          return {
+            queueEntry: {
+              qe1: { id: "qe1", createdAt: "2026-01-01", sortIndex: 1, cardDoneAt: null }
+            }
+          };
+        }
+        return {
+          _root: [{ account: "a1" }],
+          account: { a1: { queueEntries: ["qe1"] } },
+          queueEntry: {
+            qe1: { id: "qe1", createdAt: "2026-01-01", sortIndex: 1, cardDoneAt: null }
+          }
+        };
+      }
+    });
+
+    registerAutoTools({
+      server: server as any,
+      schema: {
+        models: {
+          _root: { type: "root", fields: {}, relations: { account: { type: "account", cardinality: "one" } } },
+          account: { type: "model", fields: {}, relations: { queueEntries: { type: "queueEntry", cardinality: "many" } } },
+          queueEntry: {
+            type: "model",
+            fields: { createdAt: "date", sortIndex: "int", cardDoneAt: "date" },
+            relations: { card: { type: "card", cardinality: "one" } }
+          },
+          card: { type: "model", fields: { title: "string" }, relations: {} }
+        }
+      } as any,
+      getClient: getClient as any,
+      formatError: (e) => String(e)
+    });
+
+    const listResult = await server.tools["codecks_list_queue_entry"].handler({
+      selection: ["createdAt", { card: ["title"] }],
+      response_format: ResponseFormat.JSON
+    });
+    expect(listResult.structuredContent.items[0].id).toBe("qe1");
+    expect(listResult.structuredContent.items[0].createdAt).toBe("2026-01-01");
+
+    const getResult = await server.tools["codecks_get_queue_entry"].handler({
+      id: "qe1",
+      selection: ["createdAt", { card: ["title"] }],
+      response_format: ResponseFormat.JSON
+    });
+    expect(getResult.structuredContent.id).toBe("qe1");
+  });
+
+  it("sanitizes cardUpvote relation selections to avoid upstream failures", async () => {
+    const server = createServer();
+    const getClient = () => ({
+      query: async (query: any) => {
+        const serialized = JSON.stringify(query);
+        if (serialized.includes("\"card\"")) {
+          throw new Error("unsafe cardUpvote relation selection");
+        }
+        const firstKey = Object.keys(query)[0] || "";
+        if (firstKey.startsWith("cardUpvote(")) {
+          return {
+            cardUpvote: {
+              cu1: { id: "cu1", createdAt: "2026-01-01", type: "upvote", discordUserInfo: {} }
+            }
+          };
+        }
+        return {
+          _root: [{ account: "a1" }],
+          account: { a1: { cardUpvotes: ["cu1"] } },
+          cardUpvote: {
+            cu1: { id: "cu1", createdAt: "2026-01-01", type: "upvote", discordUserInfo: {} }
+          }
+        };
+      }
+    });
+
+    registerAutoTools({
+      server: server as any,
+      schema: {
+        models: {
+          _root: { type: "root", fields: {}, relations: { account: { type: "account", cardinality: "one" } } },
+          account: { type: "model", fields: {}, relations: { cardUpvotes: { type: "cardUpvote", cardinality: "many" } } },
+          cardUpvote: {
+            type: "model",
+            fields: { createdAt: "date", type: "string", discordUserInfo: "json" },
+            relations: { card: { type: "card", cardinality: "one" } }
+          },
+          card: { type: "model", fields: { title: "string" }, relations: {} }
+        }
+      } as any,
+      getClient: getClient as any,
+      formatError: (e) => String(e)
+    });
+
+    const listResult = await server.tools["codecks_list_card_upvote"].handler({
+      selection: ["createdAt", { card: ["title"] }],
+      response_format: ResponseFormat.JSON
+    });
+    expect(listResult.structuredContent.items[0].id).toBe("cu1");
+    expect(listResult.structuredContent.items[0].createdAt).toBe("2026-01-01");
+
+    const getResult = await server.tools["codecks_get_card_upvote"].handler({
+      id: "cu1",
+      selection: ["createdAt", { card: ["title"] }],
+      response_format: ResponseFormat.JSON
+    });
+    expect(getResult.structuredContent.id).toBe("cu1");
+  });
+
+  it("sanitizes handCard relation selections to avoid upstream failures", async () => {
+    const server = createServer();
+    const getClient = () => ({
+      query: async (query: any) => {
+        const serialized = JSON.stringify(query);
+        if (serialized.includes("\"card\"")) {
+          throw new Error("unsafe handCard relation selection");
+        }
+        const firstKey = Object.keys(query)[0] || "";
+        if (firstKey.startsWith("handCard(")) {
+          return {
+            handCard: {
+              hc1: { id: "hc1", sortIndex: 1 }
+            }
+          };
+        }
+        return {
+          _root: [{ account: "a1" }],
+          account: { a1: { handCards: ["hc1"] } },
+          handCard: {
+            hc1: { id: "hc1", sortIndex: 1 }
+          }
+        };
+      }
+    });
+
+    registerAutoTools({
+      server: server as any,
+      schema: {
+        models: {
+          _root: { type: "root", fields: {}, relations: { account: { type: "account", cardinality: "one" } } },
+          account: { type: "model", fields: {}, relations: { handCards: { type: "handCard", cardinality: "many" } } },
+          handCard: {
+            type: "model",
+            fields: { sortIndex: "int" },
+            relations: { card: { type: "card", cardinality: "one" } }
+          },
+          card: { type: "model", fields: { title: "string" }, relations: {} }
+        }
+      } as any,
+      getClient: getClient as any,
+      formatError: (e) => String(e)
+    });
+
+    const listResult = await server.tools["codecks_list_hand_card"].handler({
+      selection: ["sortIndex", { card: ["title"] }],
+      response_format: ResponseFormat.JSON
+    });
+    expect(listResult.structuredContent.items[0].id).toBe("hc1");
+
+    const getResult = await server.tools["codecks_get_hand_card"].handler({
+      id: "hc1",
+      selection: ["sortIndex", { card: ["title"] }],
+      response_format: ResponseFormat.JSON
+    });
+    expect(getResult.structuredContent.id).toBe("hc1");
+  });
+
+  it("sanitizes cardSubscription relation selections to avoid upstream failures", async () => {
+    const server = createServer();
+    const getClient = () => ({
+      query: async (query: any) => {
+        const serialized = JSON.stringify(query);
+        if (serialized.includes("\"card\"")) {
+          throw new Error("unsafe cardSubscription relation selection");
+        }
+        const firstKey = Object.keys(query)[0] || "";
+        if (firstKey.startsWith("cardSubscription(")) {
+          return {
+            cardSubscription: {
+              cs1: { id: "cs1", createdAt: "2026-01-01" }
+            }
+          };
+        }
+        return {
+          _root: [{ account: "a1" }],
+          account: { a1: { cardSubscriptions: ["cs1"] } },
+          cardSubscription: {
+            cs1: { id: "cs1", createdAt: "2026-01-01" }
+          }
+        };
+      }
+    });
+
+    registerAutoTools({
+      server: server as any,
+      schema: {
+        models: {
+          _root: { type: "root", fields: {}, relations: { account: { type: "account", cardinality: "one" } } },
+          account: { type: "model", fields: {}, relations: { cardSubscriptions: { type: "cardSubscription", cardinality: "many" } } },
+          cardSubscription: {
+            type: "model",
+            fields: { createdAt: "date" },
+            relations: { card: { type: "card", cardinality: "one" } }
+          },
+          card: { type: "model", fields: { title: "string" }, relations: {} }
+        }
+      } as any,
+      getClient: getClient as any,
+      formatError: (e) => String(e)
+    });
+
+    const listResult = await server.tools["codecks_list_card_subscription"].handler({
+      selection: ["createdAt", { card: ["title"] }],
+      response_format: ResponseFormat.JSON
+    });
+    expect(listResult.structuredContent.items[0].id).toBe("cs1");
+
+    const getResult = await server.tools["codecks_get_card_subscription"].handler({
+      id: "cs1",
+      selection: ["createdAt", { card: ["title"] }],
+      response_format: ResponseFormat.JSON
+    });
+    expect(getResult.structuredContent.id).toBe("cs1");
+  });
+
+  it("excludes deleted milestones from milestoneProject by default and supports include_deleted override", async () => {
+    const server = createServer();
+    const getClient = () => ({
+      query: async () => ({
+        _root: [{ account: "a1" }],
+        account: { a1: { milestoneProjects: ["mp1", "mp2"] } },
+        milestone: {
+          m1: { id: "m1", isDeleted: true },
+          m2: { id: "m2", isDeleted: false }
+        },
+        project: {
+          p1: { id: "p1", name: "P1" },
+          p2: { id: "p2", name: "P2" }
+        },
+        milestoneProject: {
+          mp1: { id: "mp1", milestone: "m1", project: "p1" },
+          mp2: { id: "mp2", milestone: "m2", project: "p2" }
+        }
+      })
+    });
+
+    registerAutoTools({
+      server: server as any,
+      schema: {
+        models: {
+          _root: { type: "root", fields: {}, relations: { account: { type: "account", cardinality: "one" } } },
+          account: { type: "model", fields: {}, relations: { milestoneProjects: { type: "milestoneProject", cardinality: "many" } } },
+          milestoneProject: {
+            type: "model",
+            fields: {},
+            relations: {
+              milestone: { type: "milestone", cardinality: "one" },
+              project: { type: "project", cardinality: "one" }
+            }
+          },
+          milestone: { type: "model", fields: { isDeleted: "bool" }, relations: {} },
+          project: { type: "model", fields: { name: "string" }, relations: {} }
+        }
+      } as any,
+      getClient: getClient as any,
+      formatError: (e) => String(e)
+    });
+
+    const defaultResult = await server.tools["codecks_list_milestone_project"].handler({
+      response_format: ResponseFormat.JSON
+    });
+    expect(defaultResult.structuredContent.items).toHaveLength(1);
+    expect(defaultResult.structuredContent.items[0].id).toBe("mp2");
+
+    const includeDeletedResult = await server.tools["codecks_list_milestone_project"].handler({
+      include_deleted: true,
+      response_format: ResponseFormat.JSON
+    });
+    expect(includeDeletedResult.structuredContent.items).toHaveLength(2);
+  });
 });

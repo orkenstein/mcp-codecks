@@ -148,6 +148,7 @@ export const SetProjectVisibilitySchema = z.object({
 
 // Milestone schemas
 export const ListMilestonesSchema = z.object({
+  include_deleted: z.boolean().default(false).describe("Include deleted milestones (default: false)"),
   response_format: ResponseFormatSchema
 }).strict();
 
@@ -175,31 +176,48 @@ export const CreateMilestoneProjectSchema = z.object({
 
 export const StartJourneySchema = z.object({
   card_id: z.string().describe("Hero/journey parent card ID to expand"),
+  user_id: z.string().optional().describe("Actor user ID (auto-resolved if omitted)"),
+  account_id: z.string().optional().describe("Actor account ID (auto-resolved if omitted)"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage"),
   response_format: ResponseFormatSchema
 }).strict();
 
 export const AddToHandSchema = z.object({
   card_ids: z.array(z.string()).min(1).describe("Card IDs to add to hand"),
+  user_id: z.string().optional().describe("Actor user ID (auto-resolved if omitted)"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage"),
   response_format: ResponseFormatSchema
 }).strict();
 
 export const RemoveFromHandSchema = z.object({
   card_ids: z.array(z.string()).min(1).describe("Card IDs to remove from hand"),
+  user_id: z.string().optional().describe("Actor user ID (auto-resolved if omitted)"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage"),
   response_format: ResponseFormatSchema
 }).strict();
 
 export const AddToQueueSchema = z.object({
   card_ids: z.array(z.string()).min(1).describe("Card IDs to add to queue"),
+  user_id: z.string().optional().describe("Actor user ID (auto-resolved if omitted)"),
+  account_id: z.string().optional().describe("Actor account ID (auto-resolved if omitted)"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage"),
   response_format: ResponseFormatSchema
 }).strict();
 
 export const RemoveFromQueueSchema = z.object({
   card_ids: z.array(z.string()).min(1).describe("Card IDs to remove from queue"),
+  user_id: z.string().optional().describe("Actor user ID (auto-resolved if omitted)"),
+  account_id: z.string().optional().describe("Actor account ID (auto-resolved if omitted)"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage"),
   response_format: ResponseFormatSchema
 }).strict();
 
 export const ReorderQueueSchema = z.object({
   card_ids: z.array(z.string()).min(1).describe("Queue card IDs in desired order"),
+  dragged_card_ids: z.array(z.string()).min(1).describe("Dragged card IDs within the new queue ordering"),
+  user_id: z.string().optional().describe("Actor user ID (auto-resolved if omitted)"),
+  account_id: z.string().optional().describe("Actor account ID (auto-resolved if omitted)"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage"),
   response_format: ResponseFormatSchema
 }).strict();
 
@@ -219,21 +237,29 @@ export const RemoveCardUpvoteSchema = z.object({
 
 export const SubscribeCardSchema = z.object({
   card_id: z.string().describe("Card ID to subscribe to"),
+  user_id: z.string().optional().describe("Actor user ID (auto-resolved if omitted)"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage"),
   response_format: ResponseFormatSchema
 }).strict();
 
 export const UnsubscribeCardSchema = z.object({
   card_id: z.string().describe("Card ID to unsubscribe from"),
+  user_id: z.string().optional().describe("Actor user ID (auto-resolved if omitted)"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage"),
   response_format: ResponseFormatSchema
 }).strict();
 
 export const SubscribeDeckSchema = z.object({
   deck_id: z.string().describe("Deck ID to subscribe to"),
+  user_id: z.string().optional().describe("Actor user ID (auto-resolved if omitted)"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage"),
   response_format: ResponseFormatSchema
 }).strict();
 
 export const UnsubscribeDeckSchema = z.object({
   deck_id: z.string().describe("Deck ID to unsubscribe from"),
+  user_id: z.string().optional().describe("Actor user ID (auto-resolved if omitted)"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage"),
   response_format: ResponseFormatSchema
 }).strict();
 
