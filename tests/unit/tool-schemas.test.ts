@@ -5,6 +5,7 @@ import {
   CreateCardSchema,
   CreateDeckSchema,
   CreateProjectSchema,
+  DeleteCardSchema,
   ListCardsSchema,
   SetProjectVisibilitySchema
 } from "../../src/schemas/tool-schemas.js";
@@ -48,6 +49,10 @@ describe("tool schemas", () => {
       user_id: "user-1"
     };
     expect(() => CreateCardSchema.parse(value)).not.toThrow();
+  });
+
+  it("validates delete card inputs", () => {
+    expect(() => DeleteCardSchema.parse({ card_id: "card-1", response_format: "json" })).not.toThrow();
   });
 
   it("validates create project inputs", () => {

@@ -50,6 +50,7 @@ const MODEL_SELECTION_OVERRIDES: Record<string, Selection[]> = {
 const MODEL_SELECTION_ALLOWLIST: Record<string, Set<string>> = {
   publicProjectInfo: new Set(["cardCount", "cardDoneStreak", "lastActivityAt"])
 };
+const MODEL_FORCE_CLIENT_SIDE_FILTERING = new Set(["milestoneProject"]);
 const COMPATIBILITY_ALIASES: Record<string, { list: string[]; get: string[] }> = {
   activity: {
     list: ["codecks_list_activities"],
@@ -317,6 +318,144 @@ function applyClientSidePagination(items: any[], limit: number, offset: number):
   return items.slice(offset, offset + limit);
 }
 
+function extractClientFilterValue(item: Record<string, unknown>, key: string): unknown {
+  if (key in item) {
+    return item[key];
+  }
+
+  const relationKeyFromCamel = key.endsWith("Id")
+    ? `${key.slice(0, -2).charAt(0).toLowerCase()}${key.slice(1, -2)}`
+    : null;
+  if (relationKeyFromCamel && relationKeyFromCamel in item) {
+    const relationValue = item[relationKeyFromCamel];
+    if (relationValue && typeof relationValue === "object" && !Array.isArray(relationValue)) {
+      return (relationValue as Record<string, unknown>).id;
+    }
+    return relationValue;
+  }
+
+  if (key.endsWith("_id")) {
+    const relationKeyFromSnake = key.slice(0, -3);
+    if (relationKeyFromSnake in item) {
+      const relationValue = item[relationKeyFromSnake];
+      if (relationValue && typeof relationValue === "object" && !Array.isArray(relationValue)) {
+        return (relationValue as Record<string, unknown>).id;
+      }
+      return relationValue;
+    }
+  }
+
+  return undefined;
+}
+
+function matchesClientFilterValue(actual: unknown, expected: unknown): boolean {
+  if (expected && typeof expected === "object" && !Array.isArray(expected)) {
+    const op = (expected as Record<string, unknown>).op;
+    const value = (expected as Record<string, unknown>).value;
+    if ((op === "search" || op === "contains") && typeof value === "string") {
+      return String(actual ?? "").toLowerCase().includes(value.toLowerCase());
+    }
+    if (op === "eq") {
+      return actual === value;
+    }
+  }
+  return actual === expected;
+}
+
+function applyClientSideFilters(items: any[], filters: Record<string, unknown>): any[] {
+  const filterEntries = Object.entries(filters).filter(([key]) => !key.startsWith("$"));
+  if (filterEntries.length === 0) {
+    return items;
+  }
+
+  return items.filter((item) => {
+    if (!item || typeof item !== "object") {
+      return false;
+    }
+    const record = item as Record<string, unknown>;
+    return filterEntries.every(([key, expected]) =>
+      matchesClientFilterValue(extractClientFilterValue(record, key), expected)
+    );
+  });
+}
+
+function extractComparableSortValue(item: Record<string, unknown>, key: string): string | number {
+  const value = extractClientFilterValue(item, key);
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsedTime = Date.parse(value);
+    if (!Number.isNaN(parsedTime)) {
+      return parsedTime;
+    }
+    return value.toLowerCase();
+  }
+  return "";
+}
+
+function applyClientSideOrdering(
+  items: any[],
+  orderField: string | undefined,
+  orderDesc: boolean
+): any[] {
+  if (!orderField) {
+    return items;
+  }
+
+  return [...items].sort((a, b) => {
+    const left = a && typeof a === "object"
+      ? extractComparableSortValue(a as Record<string, unknown>, orderField)
+      : "";
+    const right = b && typeof b === "object"
+      ? extractComparableSortValue(b as Record<string, unknown>, orderField)
+      : "";
+    if (left < right) {
+      return orderDesc ? 1 : -1;
+    }
+    if (left > right) {
+      return orderDesc ? -1 : 1;
+    }
+    return 0;
+  });
+}
+
+function normalizeCardIdKeysDeep(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeCardIdKeysDeep(entry));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const source = value as Record<string, unknown>;
+  const normalized: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(source)) {
+    if (key === "card_id") {
+      if (!("cardId" in source)) {
+        normalized.cardId = normalizeCardIdKeysDeep(child);
+      }
+      continue;
+    }
+    normalized[key] = normalizeCardIdKeysDeep(child);
+  }
+  return normalized;
+}
+
+function normalizeItemForModel(modelName: string, item: any): any {
+  if (modelName !== "activity") {
+    return item;
+  }
+  return normalizeCardIdKeysDeep(item);
+}
+
+function normalizeItemsForModel(modelName: string, items: any[]): any[] {
+  if (modelName !== "activity") {
+    return items;
+  }
+  return items.map((item) => normalizeItemForModel(modelName, item));
+}
+
 function collectPathItems(value: unknown, relations: string[]): any[] {
   if (value == null) {
     return [];
@@ -444,7 +583,8 @@ export function registerAutoTools(options: RegisterAutoToolsOptions) {
           const offset = typeof params.offset === "number" ? params.offset : 0;
           const orderDesc = typeof params.order_desc === "boolean" ? params.order_desc : true;
           const orderField = params.order_by || chooseOrderField(schema, modelName);
-          const filters = { ...(params.filters || {}) } as Record<string, unknown>;
+          const userFilters = { ...(params.filters || {}) } as Record<string, unknown>;
+          const filters = { ...userFilters } as Record<string, unknown>;
           if (orderField) {
             filters.$order = orderDesc ? `-${orderField}` : orderField;
             filters.$limit = limit;
@@ -464,27 +604,63 @@ export function registerAutoTools(options: RegisterAutoToolsOptions) {
 
           let firstSuccessfulItems: any[] | null = null;
           let usedServerPagination = false;
+          let usedUnfilteredFallback = false;
           let firstError: unknown;
+          const hasUserFilters = Object.keys(userFilters).length > 0;
           const leafQuery = Object.keys(filters).length > 0 ? filters : undefined;
 
           for (const path of relationPaths) {
             try {
               const leafCardinality = getLeafRelationCardinality(schema, path);
-              const leafQueryForPath = leafCardinality === "many" ? leafQuery : undefined;
-              const items = await queryItemsByPath({
-                client,
-                schema,
-                path,
-                selection,
-                leafQuery: leafQueryForPath
-              });
+              const forceClientFiltering = MODEL_FORCE_CLIENT_SIDE_FILTERING.has(modelName);
+              const leafQueryForPath =
+                leafCardinality === "many" && !forceClientFiltering
+                  ? leafQuery
+                  : undefined;
+              let items: any[];
+              let pathUsedFallback = false;
+              try {
+                items = await queryItemsByPath({
+                  client,
+                  schema,
+                  path,
+                  selection,
+                  leafQuery: leafQueryForPath
+                });
+              } catch (error) {
+                if (leafQueryForPath && hasUserFilters) {
+                  items = await queryItemsByPath({
+                    client,
+                    schema,
+                    path,
+                    selection
+                  });
+                  pathUsedFallback = true;
+                } else {
+                  throw error;
+                }
+              }
+
+              if (leafQueryForPath && hasUserFilters && items.length === 0) {
+                const fallbackItems = await queryItemsByPath({
+                  client,
+                  schema,
+                  path,
+                  selection
+                });
+                if (fallbackItems.length > 0) {
+                  items = fallbackItems;
+                  pathUsedFallback = true;
+                }
+              }
               if (firstSuccessfulItems === null) {
                 firstSuccessfulItems = items;
                 usedServerPagination = Boolean(
                   leafQueryForPath &&
                   "$limit" in leafQueryForPath &&
                   "$offset" in leafQueryForPath
-                );
+                ) && !pathUsedFallback;
+                usedUnfilteredFallback = pathUsedFallback;
               }
               if (items.length > 0) {
                 firstSuccessfulItems = items;
@@ -492,7 +668,8 @@ export function registerAutoTools(options: RegisterAutoToolsOptions) {
                   leafQueryForPath &&
                   "$limit" in leafQueryForPath &&
                   "$offset" in leafQueryForPath
-                );
+                ) && !pathUsedFallback;
+                usedUnfilteredFallback = pathUsedFallback;
                 break;
               }
             } catch (error) {
@@ -507,14 +684,21 @@ export function registerAutoTools(options: RegisterAutoToolsOptions) {
               content: [{ type: "text", text: formatError(firstError) }]
             };
           }
-          const itemsToReturn = usedServerPagination
-            ? firstSuccessfulItems
-            : applyClientSidePagination(firstSuccessfulItems, limit, offset);
+          let itemsToReturn = firstSuccessfulItems;
+          if (usedUnfilteredFallback || MODEL_FORCE_CLIENT_SIDE_FILTERING.has(modelName)) {
+            itemsToReturn = applyClientSideFilters(itemsToReturn, userFilters);
+            itemsToReturn = applyClientSideOrdering(itemsToReturn, orderField, orderDesc);
+          }
 
-          const formatted = formatGenericList(modelName, itemsToReturn, params.response_format);
+          if (!usedServerPagination || usedUnfilteredFallback || MODEL_FORCE_CLIENT_SIDE_FILTERING.has(modelName)) {
+            itemsToReturn = applyClientSidePagination(itemsToReturn, limit, offset);
+          }
+
+          const normalizedItems = normalizeItemsForModel(modelName, itemsToReturn);
+          const formatted = formatGenericList(modelName, normalizedItems, params.response_format);
           return {
             content: [{ type: "text", text: formatted }],
-            structuredContent: params.response_format === ResponseFormat.JSON ? { items: itemsToReturn } : undefined
+            structuredContent: params.response_format === ResponseFormat.JSON ? { items: normalizedItems } : undefined
           };
         } catch (error) {
           return {
@@ -620,10 +804,11 @@ export function registerAutoTools(options: RegisterAutoToolsOptions) {
               hadSuccessfulLookup = true;
               const item = denormalizeById(schema, response, modelName, params.id, selection);
               if (item) {
-                const formatted = formatGeneric(modelName, item, params.response_format);
+                const normalizedItem = normalizeItemForModel(modelName, item);
+                const formatted = formatGeneric(modelName, normalizedItem, params.response_format);
                 return {
                   content: [{ type: "text", text: formatted }],
-                  structuredContent: params.response_format === ResponseFormat.JSON ? item : undefined
+                  structuredContent: params.response_format === ResponseFormat.JSON ? normalizedItem : undefined
                 };
               }
             } catch (error) {
@@ -644,10 +829,11 @@ export function registerAutoTools(options: RegisterAutoToolsOptions) {
               hadSuccessfulLookup = true;
               const item = items.find((entry) => entry?.id === params.id);
               if (item) {
-                const formatted = formatGeneric(modelName, item, params.response_format);
+                const normalizedItem = normalizeItemForModel(modelName, item);
+                const formatted = formatGeneric(modelName, normalizedItem, params.response_format);
                 return {
                   content: [{ type: "text", text: formatted }],
-                  structuredContent: params.response_format === ResponseFormat.JSON ? item : undefined
+                  structuredContent: params.response_format === ResponseFormat.JSON ? normalizedItem : undefined
                 };
               }
             } catch (error) {

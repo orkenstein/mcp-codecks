@@ -38,6 +38,7 @@ const schema = loadSchema();
 // Tool name constants - prevents sync issues between manualTools Set and registrations
 const TOOL_LIST_CARDS = "codecks_list_cards";
 const TOOL_GET_CARD = "codecks_get_card";
+const TOOL_DELETE_CARD = "codecks_delete_card";
 const TOOL_CREATE_CARD = "codecks_create_card";
 const TOOL_BULK_UPDATE_CARDS = "codecks_bulk_update_cards";
 const TOOL_LIST_DECKS = "codecks_list_decks";
@@ -54,6 +55,7 @@ const TOOL_GET_CURRENT_USER = "codecks_get_current_user";
 const manualTools = new Set<string>([
   TOOL_LIST_CARDS,
   TOOL_GET_CARD,
+  TOOL_DELETE_CARD,
   TOOL_CREATE_CARD,
   TOOL_BULK_UPDATE_CARDS,
   TOOL_LIST_DECKS,
@@ -76,6 +78,11 @@ function getClient(): CodecksClient {
     throw new Error("CodecksClient not initialized. Ensure runStdio() or runHTTP() has been called.");
   }
   return client;
+}
+
+function normalizeCardId(card: Record<string, any>): Record<string, any> {
+  const id = card?.id || card?.cardId;
+  return id ? { ...card, id } : card;
 }
 
 // ============================================================================
@@ -155,6 +162,7 @@ Error Handling:
       }
 
       const cardSelection: Selection[] = [
+        "cardId",
         "accountSeq",
         "title",
         "content",
@@ -242,6 +250,7 @@ Error Handling:
 
       // Calculate pagination metadata
       // For fallback mode we know the exact filtered total; otherwise retain heuristic.
+      cards = cards.map((card: any) => normalizeCardId(card));
       const meta = usedFallback
         ? {
             count: cards.length,
@@ -306,6 +315,7 @@ Error Handling:
 
       // Note: 'cardId' is automatically included in response
       const cardSelection: Selection[] = [
+        "cardId",
         "accountSeq",
         "title",
         "content",
@@ -328,18 +338,73 @@ Error Handling:
         params.card_id,
         cardSelection
       );
+      const normalizedCard = card ? normalizeCardId(card) : card;
 
-      if (!card) {
+      if (!normalizedCard) {
         return {
           content: [{ type: "text", text: `Error: Card with ID '${params.card_id}' not found.` }]
         };
       }
-
-      const formatted = format.formatCard(card, params.response_format);
+      const formatted = format.formatCard(normalizedCard, params.response_format);
 
       return {
         content: [{ type: "text", text: formatted }],
-        structuredContent: params.response_format === ResponseFormat.JSON ? card : undefined
+        structuredContent: params.response_format === ResponseFormat.JSON ? normalizedCard : undefined
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(error) }]
+      };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_delete_card
+// ============================================================================
+server.registerTool(
+  TOOL_DELETE_CARD,
+  {
+    title: "Delete/Archive Codecks Card",
+    description: `Archive (soft-delete) a card in Codecks.
+
+Uses Codecks' cards/update dispatch endpoint with deletion flags.
+
+Args:
+  - card_id (string): The card ID to archive/delete
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  Confirmation including the affected card ID and dispatch metadata.`,
+    inputSchema: schemas.DeleteCardSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.DeleteCardInput) => {
+    try {
+      const client = getClient();
+      const response = await client.dispatch("cards/update", {
+        id: params.card_id,
+        isDeleted: true,
+        visibility: "deleted"
+      });
+
+      const payload = {
+        card_id: params.card_id,
+        deleted: true,
+        response
+      };
+      const formatted = params.response_format === ResponseFormat.JSON
+        ? JSON.stringify(payload, null, 2)
+        : `Card archived successfully. ID: ${params.card_id}`;
+
+      return {
+        content: [{ type: "text", text: formatted }],
+        structuredContent: params.response_format === ResponseFormat.JSON ? payload : undefined
       };
     } catch (error) {
       return {
@@ -413,13 +478,28 @@ Error Handling:
       };
 
       const response = await client.dispatch("cards/create", data);
+      const responseRecord = (response ?? {}) as Record<string, unknown>;
+      const payload = responseRecord.payload as Record<string, unknown> | undefined;
+      const card = responseRecord.card as Record<string, unknown> | undefined;
+      const createdCardId =
+        (typeof responseRecord.cardId === "string" ? responseRecord.cardId : undefined) ||
+        (typeof responseRecord.id === "string" ? responseRecord.id : undefined) ||
+        (payload && typeof payload.cardId === "string" ? payload.cardId : undefined) ||
+        (payload && typeof payload.id === "string" ? payload.id : undefined) ||
+        (card && typeof card.id === "string" ? card.id : undefined);
+      const successText = createdCardId
+        ? `Card created successfully! ID: ${createdCardId}`
+        : "Card created successfully, but no card ID was returned by the API response.";
 
       return {
         content: [{ 
           type: "text", 
-          text: `Card created successfully! ID: ${response.cardId || response.id}` 
+          text: successText
         }],
-        structuredContent: response
+        structuredContent: {
+          ...responseRecord,
+          ...(createdCardId ? { cardId: createdCardId } : {})
+        }
       };
     } catch (error) {
       return {

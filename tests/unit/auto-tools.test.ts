@@ -162,7 +162,10 @@ describe("auto tools", () => {
     const getClient = () => ({
       query: async (query: any) => {
         lastQuery = query;
-        return { _root: [{ foos: [] }] };
+        return {
+          _root: [{ foos: ["f1"] }],
+          foo: { f1: { id: "f1", name: "Foo", createdAt: "2026-01-01" } }
+        };
       }
     });
     registerAutoTools({
@@ -840,5 +843,116 @@ describe("auto tools", () => {
     });
 
     expect(Object.keys(lastQuery._root[0])[0]).toBe("account");
+  });
+
+  it("falls back to unfiltered milestoneProject queries and filters client-side", async () => {
+    const server = createServer();
+    const getClient = () => ({
+      query: async (query: any) => {
+        const serialized = JSON.stringify(query);
+        if (serialized.includes("\"projectId\"")) {
+          throw new Error("API 500");
+        }
+        return {
+          _root: [{ account: "a1" }],
+          account: { a1: { milestones: ["m1"] } },
+          milestone: { m1: { milestoneProjects: ["mp1", "mp2"] } },
+          milestoneProject: {
+            mp1: { id: "mp1", project: "p1", milestone: "m1", account: "a1" },
+            mp2: { id: "mp2", project: "p2", milestone: "m1", account: "a1" }
+          }
+        };
+      }
+    });
+
+    registerAutoTools({
+      server: server as any,
+      schema: {
+        models: {
+          _root: { type: "root", fields: {}, relations: { account: { type: "account", cardinality: "one" } } },
+          account: { type: "model", fields: {}, relations: { milestones: { type: "milestone", cardinality: "many" } } },
+          milestone: { type: "model", fields: {}, relations: { milestoneProjects: { type: "milestoneProject", cardinality: "many" } } },
+          milestoneProject: {
+            type: "model",
+            fields: {},
+            relations: {
+              account: { type: "account", cardinality: "one" },
+              milestone: { type: "milestone", cardinality: "one" },
+              project: { type: "project", cardinality: "one" }
+            }
+          },
+          project: { type: "model", fields: { id: "string", name: "string" }, relations: {} }
+        }
+      } as any,
+      getClient: getClient as any,
+      formatError: (e) => String(e)
+    });
+
+    const result = await server.tools["codecks_list_milestone_project"].handler({
+      filters: { projectId: "p1" },
+      response_format: ResponseFormat.JSON
+    });
+    expect(result.structuredContent.items).toHaveLength(1);
+    expect(result.structuredContent.items[0].project).toBe("p1");
+  });
+
+  it("normalizes activity data card_id keys to cardId", async () => {
+    const server = createServer();
+    const getClient = () => ({
+      query: async (query: any) => {
+        const firstKey = Object.keys(query)[0] || "";
+        if (firstKey.startsWith("activity(")) {
+          return {
+            activity: {
+              ac1: {
+                id: "ac1",
+                createdAt: "2026-01-01",
+                data: { card_id: "c1" }
+              }
+            }
+          };
+        }
+        return {
+          _root: [{ account: "a1" }],
+          account: { a1: { activities: ["ac1"] } },
+          activity: {
+            ac1: {
+              id: "ac1",
+              createdAt: "2026-01-01",
+              data: { card_id: "c1", nested: { card_id: "c2" } }
+            }
+          }
+        };
+      }
+    });
+
+    registerAutoTools({
+      server: server as any,
+      schema: {
+        models: {
+          _root: { type: "root", fields: {}, relations: { account: { type: "account", cardinality: "one" } } },
+          account: { type: "model", fields: {}, relations: { activities: { type: "activity", cardinality: "many" } } },
+          activity: { type: "model", fields: { createdAt: "date", data: "json" }, relations: {} }
+        }
+      } as any,
+      getClient: getClient as any,
+      formatError: (e) => String(e)
+    });
+
+    const listResult = await server.tools["codecks_list_activity"].handler({
+      selection: ["createdAt", "data"],
+      response_format: ResponseFormat.JSON
+    });
+    expect(listResult.structuredContent.items[0].data.cardId).toBe("c1");
+    expect(listResult.structuredContent.items[0].data.card_id).toBeUndefined();
+    expect(listResult.structuredContent.items[0].data.nested.cardId).toBe("c2");
+
+    const getResult = await server.tools["codecks_get_activity"].handler({
+      id: "ac1",
+      selection: ["createdAt", "data"],
+      response_format: ResponseFormat.JSON
+    });
+    expect(getResult.structuredContent.data.cardId).toBe("c1");
+    expect(getResult.structuredContent.data.card_id).toBeUndefined();
   });
 });

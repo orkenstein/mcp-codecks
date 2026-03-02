@@ -87,6 +87,7 @@ Tool names use snake_case model names (e.g., `codecks_list_account_user_setting`
 
 - `codecks_list_cards` - List cards with filtering by deck, milestone, assignee, status, or search term
 - `codecks_get_card` - Get detailed information about a specific card
+- `codecks_delete_card` - Archive (soft-delete) a card by ID
 - `codecks_create_card` - Create a new card with content, properties, and assignments
 - `codecks_bulk_update_cards` - Bulk update card status and/or move cards to a deck
 

@@ -220,6 +220,7 @@ maybeDescribe("codecks integration (read)", () => {
     expect(listedCards.length).toBeGreaterThan(0);
     expect(listedCards.length).toBe(Math.min(100, expectedTitles.length));
     for (const card of listedCards) {
+      expect(card?.id).toBeTruthy();
       const listedDeckId = typeof card?.deck === "object" ? card.deck?.id : card?.deck;
       expect(listedDeckId).toBe(deckId);
     }

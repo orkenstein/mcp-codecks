@@ -57,6 +57,11 @@ export const GetCardSchema = z.object({
   response_format: ResponseFormatSchema
 }).strict();
 
+export const DeleteCardSchema = z.object({
+  card_id: z.string().describe("The card ID to archive/delete"),
+  response_format: ResponseFormatSchema
+}).strict();
+
 export const CreateCardSchema = z.object({
   content: z.string().min(1).describe("Card content (first line becomes title)"),
   deck_id: z.string().optional().describe("Deck to place card in"),
@@ -156,6 +161,7 @@ export const GetCurrentUserSchema = z.object({
 // Type exports
 export type ListCardsInput = z.infer<typeof ListCardsSchema>;
 export type GetCardInput = z.infer<typeof GetCardSchema>;
+export type DeleteCardInput = z.infer<typeof DeleteCardSchema>;
 export type CreateCardInput = z.infer<typeof CreateCardSchema>;
 export type BulkUpdateCardsInput = z.infer<typeof BulkUpdateCardsSchema>;
 export type ListDecksInput = z.infer<typeof ListDecksSchema>;
