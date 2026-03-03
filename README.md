@@ -84,7 +84,7 @@ In addition to the curated tools below, the server auto-generates `codecks_list_
 Tool names use snake_case model names (e.g., `codecks_list_account_user_setting`).
 
 ### Card Operations
-- `codecks_list_cards` - List cards with filtering by deck, milestone, assignee, status, or search term (`exclude_deleted` defaults to `true`)
+- `codecks_list_cards` - List cards with filtering by deck, milestone, assignee, status, or search term (`exclude_deleted` defaults to `true`; `response_mode` supports `compact`/`full`)
 - `codecks_get_card` - Get detailed information about a specific card (supports optional `include_relations`)
 - `codecks_get_card` - Get detailed information about a specific card
 - `codecks_delete_card` - Archive (soft-delete) a card by ID
@@ -94,17 +94,17 @@ Tool names use snake_case model names (e.g., `codecks_list_account_user_setting`
 
 ### Deck Operations
 
-- `codecks_list_decks` - List all decks, optionally filtered by project
+- `codecks_list_decks` - List all decks, optionally filtered by project (`response_mode`: `compact`/`full`)
 - `codecks_get_deck` - Get detailed information about a specific deck
 - `codecks_create_deck` - Create a new deck in a project
 - `codecks_add_decks_to_space_after` - Reorder decks within a space
 
 ### Project & Milestone Operations
 
-- `codecks_list_projects` - List all projects (with optional archived projects)
+- `codecks_list_projects` - List all projects (with optional archived projects; `response_mode`: `compact`/`full`)
 - `codecks_create_project` - Create a new project
 - `codecks_set_project_visibility` - Update project visibility (use `deleted` to remove)
-- `codecks_list_milestones` - List all milestones with due dates
+- `codecks_list_milestones` - List all milestones with due dates (`response_mode`: `compact`/`full`)
 - `codecks_get_milestone` - Get detailed information about a specific milestone
 - `codecks_create_milestone` - Create a milestone and attach it to project(s)
 - `codecks_create_milestone_project` - Link an existing milestone to an additional project
@@ -123,6 +123,7 @@ Tool names use snake_case model names (e.g., `codecks_list_account_user_setting`
 ### User Operations
 
 - `codecks_get_current_user` - Get information about the authenticated user (useful for getting your user ID)
+- `codecks_stats` - View lightweight per-tool session metrics (calls, errors, and response bytes)
 
 ## Examples
 

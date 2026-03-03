@@ -12,7 +12,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import express from "express";
 
 import { CodecksClient, formatError } from "./services/codecks-client.js";
-import { ResponseFormat } from "./types.js";
+import { ResponseFormat, ResponseMode } from "./types.js";
 import * as schemas from "./schemas/tool-schemas.js";
 import * as format from "./utils/format.js";
 import { loadSchema } from "./utils/schema.js";
@@ -72,6 +72,7 @@ const TOOL_UNSUBSCRIBE_CARD = "codecks_unsubscribe_card";
 const TOOL_SUBSCRIBE_DECK = "codecks_subscribe_deck";
 const TOOL_UNSUBSCRIBE_DECK = "codecks_unsubscribe_deck";
 const TOOL_GET_CURRENT_USER = "codecks_get_current_user";
+const TOOL_STATS = "codecks_stats";
 
 const manualTools = new Set<string>([
   TOOL_LIST_CARDS,
@@ -105,11 +106,27 @@ const manualTools = new Set<string>([
   TOOL_UNSUBSCRIBE_CARD,
   TOOL_SUBSCRIBE_DECK,
   TOOL_UNSUBSCRIBE_DECK,
-  TOOL_GET_CURRENT_USER
+  TOOL_GET_CURRENT_USER,
+  TOOL_STATS
 ]);
 
 // Codecks client - initialized eagerly at startup after env validation
 let client: CodecksClient;
+
+const serverStartTime = Date.now();
+const toolMetrics: Record<string, { calls: number; errors: number; bytes: number }> = {};
+
+function trackToolUsage(toolName: string, text: string, isError = false): void {
+  if (!toolMetrics[toolName]) {
+    toolMetrics[toolName] = { calls: 0, errors: 0, bytes: 0 };
+  }
+  const metric = toolMetrics[toolName];
+  metric.calls += 1;
+  metric.bytes += Buffer.byteLength(text ?? "", "utf-8");
+  if (isError) {
+    metric.errors += 1;
+  }
+}
 
 function getClient(): CodecksClient {
   if (!client) {
@@ -377,16 +394,43 @@ Error Handling:
             ...(cards.length === params.limit ? { next_offset: params.offset + params.limit } : {})
           };
 
-      const formatted = format.formatCardList(cards, params.response_format, meta);
-      const { content, truncated } = format.checkAndTruncate(formatted, cards.length);
+      let formatted = format.formatCardList(cards, params.response_format, meta, params.response_mode);
+      let { content, truncated } = format.checkAndTruncate(formatted, cards.length, {
+        responseMode: params.response_mode,
+        totalItems: totalMatching
+      });
+      let responseModeUsed = params.response_mode;
 
+      if (
+        truncated &&
+        params.response_format === ResponseFormat.MARKDOWN &&
+        params.response_mode === ResponseMode.FULL
+      ) {
+        formatted = format.formatCardList(cards, params.response_format, meta, ResponseMode.COMPACT);
+        const compactResult = format.checkAndTruncate(formatted, cards.length, {
+          responseMode: ResponseMode.COMPACT,
+          totalItems: totalMatching
+        });
+        content = compactResult.content;
+        truncated = compactResult.truncated;
+        responseModeUsed = ResponseMode.COMPACT;
+        if (!compactResult.truncated) {
+          content += "\n\n---\nFull output exceeded response size limits and was automatically switched to response_mode='compact'.";
+        }
+      }
+
+      trackToolUsage(TOOL_LIST_CARDS, content);
       return {
         content: [{ type: "text", text: content }],
-        structuredContent: params.response_format === ResponseFormat.JSON ? { cards, ...meta, truncated } : undefined
+        structuredContent: params.response_format === ResponseFormat.JSON
+          ? { cards, ...meta, truncated, response_mode_used: responseModeUsed }
+          : undefined
       };
     } catch (error) {
+      const message = formatError(error);
+      trackToolUsage(TOOL_LIST_CARDS, message, true);
       return {
-        content: [{ type: "text", text: formatError(error) }]
+        content: [{ type: "text", text: message }]
       };
     }
   }
@@ -1332,13 +1376,38 @@ Examples:
         });
       }
 
-      const formatted = format.formatDeckList(decks, params.response_format);
+      let formatted = format.formatDeckList(decks, params.response_format, params.response_mode);
+      let { content, truncated } = format.checkAndTruncate(formatted, decks.length, {
+        responseMode: params.response_mode,
+        totalItems: decks.length
+      });
+      let responseModeUsed = params.response_mode;
 
+      if (
+        truncated &&
+        params.response_format === ResponseFormat.MARKDOWN &&
+        params.response_mode === ResponseMode.FULL
+      ) {
+        formatted = format.formatDeckList(decks, params.response_format, ResponseMode.COMPACT);
+        const compactResult = format.checkAndTruncate(formatted, decks.length, {
+          responseMode: ResponseMode.COMPACT,
+          totalItems: decks.length
+        });
+        content = compactResult.content;
+        truncated = compactResult.truncated;
+        responseModeUsed = ResponseMode.COMPACT;
+      }
+
+      trackToolUsage(TOOL_LIST_DECKS, content);
       return {
-        content: [{ type: "text", text: formatted }],
-        structuredContent: params.response_format === ResponseFormat.JSON ? { decks } : undefined
+        content: [{ type: "text", text: content }],
+        structuredContent: params.response_format === ResponseFormat.JSON
+          ? { decks, truncated, response_mode_used: responseModeUsed }
+          : undefined
       };
     } catch (error) {
+      const message = formatError(error);
+      trackToolUsage(TOOL_LIST_DECKS, message, true);
       return {
         content: [{ type: "text", text: formatError(error) }]
       };
@@ -1565,13 +1634,38 @@ Returns:
       const account = denormalizeRootRelation(schema, response as Record<string, any>, "account", accountSelection);
       const projects = account?.[projectRelation] || [];
 
-      const formatted = format.formatProjectList(projects, params.response_format);
+      let formatted = format.formatProjectList(projects, params.response_format, params.response_mode);
+      let { content, truncated } = format.checkAndTruncate(formatted, projects.length, {
+        responseMode: params.response_mode,
+        totalItems: projects.length
+      });
+      let responseModeUsed = params.response_mode;
 
+      if (
+        truncated &&
+        params.response_format === ResponseFormat.MARKDOWN &&
+        params.response_mode === ResponseMode.FULL
+      ) {
+        formatted = format.formatProjectList(projects, params.response_format, ResponseMode.COMPACT);
+        const compactResult = format.checkAndTruncate(formatted, projects.length, {
+          responseMode: ResponseMode.COMPACT,
+          totalItems: projects.length
+        });
+        content = compactResult.content;
+        truncated = compactResult.truncated;
+        responseModeUsed = ResponseMode.COMPACT;
+      }
+
+      trackToolUsage(TOOL_LIST_PROJECTS, content);
       return {
-        content: [{ type: "text", text: formatted }],
-        structuredContent: params.response_format === ResponseFormat.JSON ? { projects } : undefined
+        content: [{ type: "text", text: content }],
+        structuredContent: params.response_format === ResponseFormat.JSON
+          ? { projects, truncated, response_mode_used: responseModeUsed }
+          : undefined
       };
     } catch (error) {
+      const message = formatError(error);
+      trackToolUsage(TOOL_LIST_PROJECTS, message, true);
       return {
         content: [{ type: "text", text: formatError(error) }]
       };
@@ -1720,13 +1814,38 @@ Returns:
         milestones = milestones.filter((milestone: Record<string, unknown>) => milestone?.isDeleted !== true);
       }
 
-      const formatted = format.formatMilestoneList(milestones, params.response_format);
+      let formatted = format.formatMilestoneList(milestones, params.response_format, params.response_mode);
+      let { content, truncated } = format.checkAndTruncate(formatted, milestones.length, {
+        responseMode: params.response_mode,
+        totalItems: milestones.length
+      });
+      let responseModeUsed = params.response_mode;
 
+      if (
+        truncated &&
+        params.response_format === ResponseFormat.MARKDOWN &&
+        params.response_mode === ResponseMode.FULL
+      ) {
+        formatted = format.formatMilestoneList(milestones, params.response_format, ResponseMode.COMPACT);
+        const compactResult = format.checkAndTruncate(formatted, milestones.length, {
+          responseMode: ResponseMode.COMPACT,
+          totalItems: milestones.length
+        });
+        content = compactResult.content;
+        truncated = compactResult.truncated;
+        responseModeUsed = ResponseMode.COMPACT;
+      }
+
+      trackToolUsage(TOOL_LIST_MILESTONES, content);
       return {
-        content: [{ type: "text", text: formatted }],
-        structuredContent: params.response_format === ResponseFormat.JSON ? { milestones } : undefined
+        content: [{ type: "text", text: content }],
+        structuredContent: params.response_format === ResponseFormat.JSON
+          ? { milestones, truncated, response_mode_used: responseModeUsed }
+          : undefined
       };
     } catch (error) {
+      const message = formatError(error);
+      trackToolUsage(TOOL_LIST_MILESTONES, message, true);
       return {
         content: [{ type: "text", text: formatError(error) }]
       };
@@ -2406,6 +2525,71 @@ Returns:
         content: [{ type: "text", text: formatError(error) }]
       };
     }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_stats
+// ============================================================================
+server.registerTool(
+  TOOL_STATS,
+  {
+    title: "Codecks MCP Session Stats",
+    description: "Show lightweight per-tool usage stats for this MCP server session.",
+    inputSchema: schemas.StatsSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true
+    }
+  },
+  async (_params: schemas.StatsInput) => {
+    const uptimeMinutes = ((Date.now() - serverStartTime) / 60000).toFixed(1);
+    const entries = Object.entries(toolMetrics)
+      .map(([tool, metric]) => ({ tool, ...metric }))
+      .sort((a, b) => b.calls - a.calls);
+
+    const totals = entries.reduce(
+      (acc, row) => ({
+        calls: acc.calls + row.calls,
+        errors: acc.errors + row.errors,
+        bytes: acc.bytes + row.bytes
+      }),
+      { calls: 0, errors: 0, bytes: 0 }
+    );
+
+    const lines = [
+      "# Codecks MCP Session Stats",
+      "",
+      `- **Uptime**: ${uptimeMinutes} min`,
+      `- **Total Calls**: ${totals.calls}`,
+      `- **Total Errors**: ${totals.errors}`,
+      `- **Bytes Returned**: ${(totals.bytes / 1024).toFixed(1)} KB`,
+      ""
+    ];
+
+    if (entries.length === 0) {
+      lines.push("No tracked tool calls yet.");
+    } else {
+      lines.push("| Tool | Calls | Errors | Bytes |");
+      lines.push("|---|---:|---:|---:|");
+      for (const row of entries) {
+        lines.push(`| ${row.tool} | ${row.calls} | ${row.errors} | ${row.bytes} |`);
+      }
+    }
+
+    const text = lines.join("\n");
+    trackToolUsage(TOOL_STATS, text);
+
+    return {
+      content: [{ type: "text", text }],
+      structuredContent: {
+        uptime_minutes: Number(uptimeMinutes),
+        totals,
+        tools: entries
+      }
+    };
   }
 );
 

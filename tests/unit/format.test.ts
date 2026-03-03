@@ -9,7 +9,7 @@ import {
   formatMilestoneList,
   formatProjectList
 } from "../../src/utils/format.js";
-import { ResponseFormat } from "../../src/types.js";
+import { ResponseFormat, ResponseMode } from "../../src/types.js";
 
 describe("format utilities", () => {
   it("formats card as markdown", () => {
@@ -60,6 +60,24 @@ describe("format utilities", () => {
     const cards = [{ accountSeq: 1, title: "A", derivedStatus: "done" }];
     const output = formatCardList(cards, ResponseFormat.MARKDOWN, { total: 1, count: 1 });
     expect(output).toContain("# Cards");
+  });
+
+  it("formats list outputs in compact mode", () => {
+    const cards = [{ accountSeq: 1, title: "A", derivedStatus: "done" }];
+    const cardOutput = formatCardList(cards, ResponseFormat.MARKDOWN, undefined, ResponseMode.COMPACT);
+    expect(cardOutput).toContain("- $1 A — status: done");
+
+    const decks = [{ id: "d1", title: "Gameplay", deckType: "regular", project: { id: "p1", name: "Core" } }];
+    const deckOutput = formatDeckList(decks, ResponseFormat.MARKDOWN, ResponseMode.COMPACT);
+    expect(deckOutput).toContain("Gameplay (d1)");
+
+    const projects = [{ id: "p1", name: "Core", visibility: "public" }];
+    const projectOutput = formatProjectList(projects, ResponseFormat.MARKDOWN, ResponseMode.COMPACT);
+    expect(projectOutput).toContain("Core (p1) — public");
+
+    const milestones = [{ id: "m1", name: "Alpha", date: "2026-04-01" }];
+    const milestoneOutput = formatMilestoneList(milestones, ResponseFormat.MARKDOWN, ResponseMode.COMPACT);
+    expect(milestoneOutput).toContain("Alpha (m1) — due: 2026-04-01");
   });
 
   it("formats card and card list when deck has title but no name", () => {

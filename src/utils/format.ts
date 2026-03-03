@@ -2,7 +2,7 @@
  * Formatting utilities for responses
  */
 
-import { ResponseFormat } from "../types.js";
+import { ResponseFormat, ResponseMode } from "../types.js";
 import { CHARACTER_LIMIT } from "../constants.js";
 
 /**
@@ -84,7 +84,12 @@ export function formatMilestone(milestone: any, format: ResponseFormat): string 
 /**
  * Format multiple cards for listing
  */
-export function formatCardList(cards: any[], format: ResponseFormat, meta?: any): string {
+export function formatCardList(
+  cards: any[],
+  format: ResponseFormat,
+  meta?: any,
+  responseMode: ResponseMode = ResponseMode.FULL
+): string {
   if (format === ResponseFormat.JSON) {
     const response = {
       cards,
@@ -97,21 +102,39 @@ export function formatCardList(cards: any[], format: ResponseFormat, meta?: any)
   const lines = ["# Cards", ""];
 
   if (meta) {
-  lines.push(`Showing: ${cards.length} results`);
+    lines.push(`Showing: ${cards.length} results`);
     if (meta.has_more) {
       lines.push(`*More results available - use offset ${meta.next_offset} to continue*`);
     }
     lines.push("");
   }
-
   for (const card of cards) {
-    lines.push(`## $${card.accountSeq}: ${card.title || "(Untitled)"}`);
-    lines.push(`- **Status**: ${card.derivedStatus}`);
-    if (card.assignee) {
-      lines.push(`- **Assignee**: ${card.assignee.name}`);
+    const title = card.title || "(Untitled)";
+    const seq = card.accountSeq ?? "?";
+    const status = card.derivedStatus || "unknown";
+    const assignee = card.assignee?.name;
+    const deck = card.deck?.name || card.deck?.title || card.deck?.id || card.deck;
+    const milestone = card.milestone?.name || card.milestone?.id || card.milestone;
+
+    if (responseMode === ResponseMode.COMPACT) {
+      const details: string[] = [`status: ${status}`];
+      if (assignee) details.push(`assignee: ${assignee}`);
+      if (deck) details.push(`deck: ${deck}`);
+      if (milestone) details.push(`milestone: ${milestone}`);
+      lines.push(`- $${seq} ${title} — ${details.join(", ")}`);
+      continue;
     }
-    if (card.deck) {
-      lines.push(`- **Deck**: ${card.deck.name || card.deck.title || card.deck.id || card.deck}`);
+
+    lines.push(`## $${seq}: ${title}`);
+    lines.push(`- **Status**: ${status}`);
+    if (assignee) {
+      lines.push(`- **Assignee**: ${assignee}`);
+    }
+    if (deck) {
+      lines.push(`- **Deck**: ${deck}`);
+    }
+    if (milestone) {
+      lines.push(`- **Milestone**: ${milestone}`);
     }
     if (card.effort !== undefined) {
       lines.push(`- **Effort**: ${card.effort}`);
@@ -155,7 +178,11 @@ export function formatDeck(deck: any, format: ResponseFormat): string {
 /**
  * Format multiple decks for listing
  */
-export function formatDeckList(decks: any[], format: ResponseFormat): string {
+export function formatDeckList(
+  decks: any[],
+  format: ResponseFormat,
+  responseMode: ResponseMode = ResponseMode.FULL
+): string {
   if (format === ResponseFormat.JSON) {
     return JSON.stringify({ decks }, null, 2);
   }
@@ -163,11 +190,20 @@ export function formatDeckList(decks: any[], format: ResponseFormat): string {
   const lines = ["# Decks", ""];
 
   for (const deck of decks) {
-    lines.push(`## ${deck.title || deck.name || "(Untitled Deck)"}`);
+    const title = deck.title || deck.name || "(Untitled Deck)";
+    const type = deck.deckType || deck.type || "unknown";
+    const project = deck.project?.name || deck.project?.id || deck.project;
+
+    if (responseMode === ResponseMode.COMPACT) {
+      lines.push(`- ${title} (${deck.id}) — type: ${type}${project ? `, project: ${project}` : ""}`);
+      continue;
+    }
+
+    lines.push(`## ${title}`);
     lines.push(`- **ID**: ${deck.id}`);
-    lines.push(`- **Type**: ${deck.deckType || deck.type || "unknown"}`);
-    if (deck.project) {
-      lines.push(`- **Project**: ${deck.project.name || deck.project.id || deck.project}`);
+    lines.push(`- **Type**: ${type}`);
+    if (project) {
+      lines.push(`- **Project**: ${project}`);
     }
     lines.push("");
   }
@@ -178,7 +214,11 @@ export function formatDeckList(decks: any[], format: ResponseFormat): string {
 /**
  * Format projects for listing
  */
-export function formatProjectList(projects: any[], format: ResponseFormat): string {
+export function formatProjectList(
+  projects: any[],
+  format: ResponseFormat,
+  responseMode: ResponseMode = ResponseMode.FULL
+): string {
   if (format === ResponseFormat.JSON) {
     return JSON.stringify({ projects }, null, 2);
   }
@@ -186,9 +226,14 @@ export function formatProjectList(projects: any[], format: ResponseFormat): stri
   const lines = ["# Projects", ""];
 
   for (const project of projects) {
-    const status = project.isArchived ? " (Archived)" : "";
-    lines.push(`## ${project.name}${status}`);
+    const status = project.visibility || (project.isArchived ? "archived" : "active");
+    if (responseMode === ResponseMode.COMPACT) {
+      lines.push(`- ${project.name} (${project.id}) — ${status}`);
+      continue;
+    }
+    lines.push(`## ${project.name}${project.isArchived ? " (Archived)" : ""}`);
     lines.push(`- **ID**: ${project.id}`);
+    lines.push(`- **Visibility**: ${status}`);
     lines.push("");
   }
 
@@ -198,7 +243,11 @@ export function formatProjectList(projects: any[], format: ResponseFormat): stri
 /**
  * Format milestones for listing
  */
-export function formatMilestoneList(milestones: any[], format: ResponseFormat): string {
+export function formatMilestoneList(
+  milestones: any[],
+  format: ResponseFormat,
+  responseMode: ResponseMode = ResponseMode.FULL
+): string {
   if (format === ResponseFormat.JSON) {
     return JSON.stringify({ milestones }, null, 2);
   }
@@ -206,10 +255,15 @@ export function formatMilestoneList(milestones: any[], format: ResponseFormat): 
   const lines = ["# Milestones", ""];
 
   for (const milestone of milestones) {
+    const dueDate = milestone.date || milestone.dueDate;
+    if (responseMode === ResponseMode.COMPACT) {
+      lines.push(`- ${milestone.name} (${milestone.id})${dueDate ? ` — due: ${dueDate}` : ""}`);
+      continue;
+    }
     lines.push(`## ${milestone.name}`);
     lines.push(`- **ID**: ${milestone.id}`);
-    if (milestone.date || milestone.dueDate) {
-      lines.push(`- **Due Date**: ${milestone.date || milestone.dueDate}`);
+    if (dueDate) {
+      lines.push(`- **Due Date**: ${dueDate}`);
     }
     if (milestone.description) {
       lines.push(`- **Description**: ${milestone.description}`);
@@ -223,16 +277,23 @@ export function formatMilestoneList(milestones: any[], format: ResponseFormat): 
 /**
  * Check if response exceeds character limit and truncate if needed
  */
-export function checkAndTruncate(content: string, dataLength: number): { content: string; truncated: boolean } {
+export function checkAndTruncate(
+  content: string,
+  dataLength: number,
+  options?: { responseMode?: ResponseMode; totalItems?: number }
+): { content: string; truncated: boolean } {
   if (content.length <= CHARACTER_LIMIT) {
     return { content, truncated: false };
   }
-
-  const truncationMsg = `\n\n---\n**Response truncated** - showing approximately half of ${dataLength} items. Use pagination (offset/limit) or add filters to see more results.`;
-  const maxLength = CHARACTER_LIMIT - truncationMsg.length;
+  const mode = options?.responseMode || ResponseMode.FULL;
+  const total = options?.totalItems ?? dataLength;
+  const truncationMsg = `\n\n---\n**Response truncated** - showing partial output for ${dataLength} of ${total} item(s). Use lower limit, higher offset, more filters, or response_mode='compact' to reduce size.`;
+  const maxLength = Math.max(0, CHARACTER_LIMIT - truncationMsg.length);
+  const cutAt = content.lastIndexOf("\n", maxLength);
+  const safeCut = cutAt > Math.floor(maxLength * 0.7) ? cutAt : maxLength;
   
   return {
-    content: content.substring(0, maxLength) + truncationMsg,
+    content: content.substring(0, safeCut) + truncationMsg + (mode === ResponseMode.COMPACT ? "" : "\nTip: retry with response_mode='compact' for denser summaries."),
     truncated: true
   };
 }

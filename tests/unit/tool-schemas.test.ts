@@ -12,7 +12,9 @@ import {
   DeleteMilestoneSchema,
   DeleteCardSchema,
   ListCardsSchema,
+  ListDecksSchema,
   ListMilestonesSchema,
+  ListProjectsSchema,
   RemoveCardUpvoteSchema,
   RemoveFromHandSchema,
   RemoveFromQueueSchema,
@@ -41,6 +43,10 @@ describe("tool schemas", () => {
     expect(() => ListCardsSchema.parse({ status: "hero", response_format: "json" })).not.toThrow();
     expect(() => ListCardsSchema.parse({ status: "archivedDone", response_format: "json" })).not.toThrow();
     expect(ListCardsSchema.parse({ response_format: "json" }).exclude_deleted).toBe(true);
+    expect(ListCardsSchema.parse({ response_format: "json" }).response_mode).toBe("compact");
+    expect(ListDecksSchema.parse({ response_format: "json" }).response_mode).toBe("compact");
+    expect(ListProjectsSchema.parse({ response_format: "json" }).response_mode).toBe("compact");
+    expect(ListMilestonesSchema.parse({ response_format: "json" }).response_mode).toBe("compact");
   });
 
   it("validates create deck inputs", () => {

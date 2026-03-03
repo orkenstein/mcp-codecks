@@ -3,7 +3,7 @@
  */
 
 import { z } from "zod";
-import { ResponseFormat } from "../types.js";
+import { ResponseFormat, ResponseMode } from "../types.js";
 import { DEFAULT_LIMIT, MAX_LIMIT } from "../constants.js";
 
 // Common schemas
@@ -25,6 +25,10 @@ export const ResponseFormatSchema = z.nativeEnum(ResponseFormat)
   .default(ResponseFormat.MARKDOWN)
   .describe("Output format: 'markdown' for human-readable or 'json' for structured data");
 
+export const ResponseModeSchema = z.nativeEnum(ResponseMode)
+  .default(ResponseMode.COMPACT)
+  .describe("Response verbosity for markdown list output: 'compact' (default) or 'full'");
+
 const CardStatusSchema = z.string().min(1)
   .describe("Card status value (API-driven, e.g. unassigned, started, review, blocked, done, hero, archivedDone, doc)");
 
@@ -39,6 +43,7 @@ export const ListCardsSchema = z.object({
   exclude_deleted: z.boolean().default(true).describe("Exclude deleted cards by default"),
   limit: z.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
   offset: z.number().int().min(0).default(0),
+  response_mode: ResponseModeSchema,
   response_format: ResponseFormatSchema
 }).strict();
 
@@ -99,6 +104,7 @@ export const CreateCardSchema = z.object({
 // Deck schemas
 export const ListDecksSchema = z.object({
   project_id: z.string().optional().describe("Filter by specific project ID"),
+  response_mode: ResponseModeSchema,
   response_format: ResponseFormatSchema
 }).strict();
 
@@ -127,6 +133,7 @@ export const AddDecksToSpaceAfterSchema = z.object({
 // Project schemas
 export const ListProjectsSchema = z.object({
   include_archived: z.boolean().default(false).describe("Include archived projects"),
+  response_mode: ResponseModeSchema,
   response_format: ResponseFormatSchema
 }).strict();
 
@@ -149,6 +156,7 @@ export const SetProjectVisibilitySchema = z.object({
 // Milestone schemas
 export const ListMilestonesSchema = z.object({
   include_deleted: z.boolean().default(false).describe("Include deleted milestones (default: false)"),
+  response_mode: ResponseModeSchema,
   response_format: ResponseFormatSchema
 }).strict();
 
@@ -305,6 +313,8 @@ export const GetCurrentUserSchema = z.object({
   response_format: ResponseFormatSchema
 }).strict();
 
+export const StatsSchema = z.object({}).strict();
+
 // Type exports
 export type ListCardsInput = z.infer<typeof ListCardsSchema>;
 export type GetCardInput = z.infer<typeof GetCardSchema>;
@@ -338,3 +348,4 @@ export type UpdateMilestoneInput = z.infer<typeof UpdateMilestoneSchema>;
 export type DeleteMilestoneInput = z.infer<typeof DeleteMilestoneSchema>;
 export type UnlinkMilestoneProjectInput = z.infer<typeof UnlinkMilestoneProjectSchema>;
 export type GetCurrentUserInput = z.infer<typeof GetCurrentUserSchema>;
+export type StatsInput = z.infer<typeof StatsSchema>;

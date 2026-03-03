@@ -7,6 +7,11 @@ export enum ResponseFormat {
   JSON = "json"
 }
 
+export enum ResponseMode {
+  COMPACT = "compact",
+  FULL = "full"
+}
+
 export interface CodecksCard {
   id: string;
   accountSeq: number;
