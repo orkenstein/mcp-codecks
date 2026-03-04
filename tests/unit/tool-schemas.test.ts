@@ -6,15 +6,19 @@ import {
   BulkUpdateCardsSchema,
   CreateMilestoneProjectSchema,
   CreateMilestoneSchema,
+  CreateSpaceSchema,
   CreateCardSchema,
   CreateDeckSchema,
   CreateProjectSchema,
   DeleteMilestoneSchema,
+  DeleteSpaceSchema,
   DeleteCardSchema,
   ListCardsSchema,
   ListDecksSchema,
   ListMilestonesSchema,
   ListProjectsSchema,
+  ListSpacesSchema,
+  GetSpaceSchema,
   RemoveCardUpvoteSchema,
   RemoveFromHandSchema,
   RemoveFromQueueSchema,
@@ -27,6 +31,7 @@ import {
   UnsubscribeCardSchema,
   UnsubscribeDeckSchema,
   UpdateMilestoneSchema,
+  UpdateSpaceSchema,
   UpvoteCardSchema
 } from "../../src/schemas/tool-schemas.js";
 
@@ -47,6 +52,8 @@ describe("tool schemas", () => {
     expect(ListDecksSchema.parse({ response_format: "json" }).response_mode).toBe("compact");
     expect(ListProjectsSchema.parse({ response_format: "json" }).response_mode).toBe("compact");
     expect(ListMilestonesSchema.parse({ response_format: "json" }).response_mode).toBe("compact");
+    expect(ListSpacesSchema.parse({ response_format: "json" }).response_mode).toBe("compact");
+    expect(ListSpacesSchema.parse({ response_format: "json" }).include_archived).toBe(false);
   });
 
   it("validates create deck inputs", () => {
@@ -68,6 +75,21 @@ describe("tool schemas", () => {
       target_space_id: 1
     };
     expect(() => AddDecksToSpaceAfterSchema.parse(value)).not.toThrow();
+  });
+
+  it("validates space read inputs", () => {
+    expect(() => ListSpacesSchema.parse({ response_format: "json" })).not.toThrow();
+    expect(() => ListSpacesSchema.parse({ project_id: "project-1", include_archived: true, response_format: "json" })).not.toThrow();
+    expect(() => GetSpaceSchema.parse({ project_id: "project-1", space_id: 1, response_format: "json" })).not.toThrow();
+  });
+
+  it("validates space write inputs", () => {
+    expect(() => CreateSpaceSchema.parse({ project_id: "project-1", name: "Production" })).not.toThrow();
+    expect(CreateSpaceSchema.parse({ project_id: "project-1", name: "Production" }).default_deck_type).toBe("task");
+    expect(() => UpdateSpaceSchema.parse({ project_id: "project-1", space_id: 2, name: "QA" })).not.toThrow();
+    expect(() => UpdateSpaceSchema.parse({ project_id: "project-1", space_id: 2, icon: null })).not.toThrow();
+    expect(() => UpdateSpaceSchema.parse({ project_id: "project-1", space_id: 2 })).toThrow();
+    expect(() => DeleteSpaceSchema.parse({ project_id: "project-1", space_id: 2 })).not.toThrow();
   });
 
   it("validates create card inputs", () => {

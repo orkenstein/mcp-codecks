@@ -130,6 +130,49 @@ export const AddDecksToSpaceAfterSchema = z.object({
   target_space_id: z.number().int().describe("Target space ID"),
   session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
 }).strict();
+// Space schemas
+export const ListSpacesSchema = z.object({
+  project_id: z.string().optional().describe("Filter by specific project ID"),
+  include_archived: z.boolean().default(false).describe("Include archived projects when collecting spaces"),
+  response_mode: ResponseModeSchema,
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const GetSpaceSchema = z.object({
+  project_id: z.string().describe("Project ID that owns the space"),
+  space_id: z.number().int().describe("Numeric space ID within the project"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const CreateSpaceSchema = z.object({
+  project_id: z.string().describe("Project ID that will own the new space"),
+  name: z.string().min(1).describe("Space name"),
+  icon: z.string().nullable().optional().describe("Optional icon slug (e.g., tasks, gdd); use null for no icon"),
+  default_deck_type: z.string().default("task").describe("Default deck type for decks created in this space"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
+}).strict();
+
+export const UpdateSpaceSchema = z.object({
+  project_id: z.string().describe("Project ID that owns the space"),
+  space_id: z.number().int().describe("Space ID to update"),
+  name: z.string().min(1).optional().describe("Updated space name"),
+  icon: z.string().nullable().optional().describe("Updated icon slug; set null to clear icon"),
+  default_deck_type: z.string().optional().describe("Updated default deck type"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
+}).strict().refine(
+  (value) => Boolean(
+    value.name !== undefined ||
+    value.icon !== undefined ||
+    value.default_deck_type !== undefined
+  ),
+  { message: "Provide at least one field to update (name, icon, or default_deck_type)." }
+);
+
+export const DeleteSpaceSchema = z.object({
+  project_id: z.string().describe("Project ID that owns the space"),
+  space_id: z.number().int().describe("Space ID to delete"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
+}).strict();
 
 // Project schemas
 export const ListProjectsSchema = z.object({
@@ -326,6 +369,11 @@ export type ListDecksInput = z.infer<typeof ListDecksSchema>;
 export type GetDeckInput = z.infer<typeof GetDeckSchema>;
 export type CreateDeckInput = z.infer<typeof CreateDeckSchema>;
 export type AddDecksToSpaceAfterInput = z.infer<typeof AddDecksToSpaceAfterSchema>;
+export type ListSpacesInput = z.infer<typeof ListSpacesSchema>;
+export type GetSpaceInput = z.infer<typeof GetSpaceSchema>;
+export type CreateSpaceInput = z.infer<typeof CreateSpaceSchema>;
+export type UpdateSpaceInput = z.infer<typeof UpdateSpaceSchema>;
+export type DeleteSpaceInput = z.infer<typeof DeleteSpaceSchema>;
 export type ListProjectsInput = z.infer<typeof ListProjectsSchema>;
 export type CreateProjectInput = z.infer<typeof CreateProjectSchema>;
 export type SetProjectVisibilityInput = z.infer<typeof SetProjectVisibilitySchema>;

@@ -49,6 +49,11 @@ const TOOL_LIST_DECKS = "codecks_list_decks";
 const TOOL_GET_DECK = "codecks_get_deck";
 const TOOL_CREATE_DECK = "codecks_create_deck";
 const TOOL_ADD_DECKS_TO_SPACE = "codecks_add_decks_to_space_after";
+const TOOL_LIST_SPACES = "codecks_list_spaces";
+const TOOL_GET_SPACE = "codecks_get_space";
+const TOOL_CREATE_SPACE = "codecks_create_space";
+const TOOL_UPDATE_SPACE = "codecks_update_space";
+const TOOL_DELETE_SPACE = "codecks_delete_space";
 const TOOL_LIST_PROJECTS = "codecks_list_projects";
 const TOOL_CREATE_PROJECT = "codecks_create_project";
 const TOOL_SET_PROJECT_VISIBILITY = "codecks_set_project_visibility";
@@ -84,6 +89,11 @@ const manualTools = new Set<string>([
   TOOL_GET_DECK,
   TOOL_CREATE_DECK,
   TOOL_ADD_DECKS_TO_SPACE,
+  TOOL_LIST_SPACES,
+  TOOL_GET_SPACE,
+  TOOL_CREATE_SPACE,
+  TOOL_UPDATE_SPACE,
+  TOOL_DELETE_SPACE,
   TOOL_LIST_PROJECTS,
   TOOL_CREATE_PROJECT,
   TOOL_SET_PROJECT_VISIBILITY,
@@ -144,6 +154,47 @@ function normalizeCardId(card: Record<string, any>, fallbackId?: string): Record
   delete normalized.cardId;
   delete normalized.card_id;
   return normalized;
+}
+
+function normalizeSpacesFromProject(project: any): any[] {
+  const rawSpaces = Array.isArray(project?.spaces) ? project.spaces : [];
+  const projectRef = {
+    id: project?.id,
+    name: project?.name,
+    visibility: project?.visibility
+  };
+
+  return rawSpaces
+    .filter((space: any) => space && typeof space === "object" && !Array.isArray(space))
+    .map((space: any) => ({
+      id: typeof space.id === "number" ? space.id : Number(space.id),
+      name: space.name,
+      icon: space.icon ?? null,
+      defaultDeckType: space.defaultDeckType,
+      project: projectRef
+    }))
+    .filter((space: any) => Number.isFinite(space.id));
+}
+
+async function getProjectWithSpaces(client: CodecksClient, projectId: string): Promise<any | null> {
+  const projectSelection: Selection[] = ["id", "name", "visibility", "spaces"];
+  const query = buildIdQuery(schema, "project", [projectId], projectSelection);
+  const response = await client.query(query);
+  return denormalizeById(
+    schema,
+    response as Record<string, any>,
+    "project",
+    projectId,
+    projectSelection
+  );
+}
+
+function getRawProjectSpaces(project: any): any[] {
+  if (!Array.isArray(project?.spaces)) {
+    return [];
+  }
+
+  return project.spaces.filter((space: any) => space && typeof space === "object" && !Array.isArray(space));
 }
 
 async function resolveCurrentUserId(client: CodecksClient): Promise<string | undefined> {
@@ -1584,6 +1635,401 @@ Returns:
       return {
         content: [{ type: "text", text: "Decks reordered successfully." }],
         structuredContent: response
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(error) }]
+      };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_list_spaces
+// ============================================================================
+server.registerTool(
+  TOOL_LIST_SPACES,
+  {
+    title: "List Codecks Spaces",
+    description: `List project spaces from your Codecks account.
+
+Spaces are read from each project's \`spaces\` field and returned with project context.
+
+Args:
+  - project_id (string, optional): Restrict spaces to a single project
+  - include_archived (boolean): Include archived projects (default: false)
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  List of spaces with numeric ID, name, icon, default deck type, and owning project.`,
+    inputSchema: schemas.ListSpacesSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.ListSpacesInput) => {
+    try {
+      const client = getClient();
+
+      const projectSelection: Selection[] = ["id", "name", "visibility", "spaces"];
+      const projectRelation = params.include_archived ? "anyProjects" : "projects";
+      const accountSelection: Selection[] = [{ [projectRelation]: projectSelection }];
+      validateSelection(schema, "account", accountSelection);
+
+      const query = buildRootQuery(schema, "account", accountSelection);
+      const response = await client.query(query);
+      const account = denormalizeRootRelation(schema, response as Record<string, any>, "account", accountSelection);
+
+      let projects = account?.[projectRelation] || [];
+      if (params.project_id) {
+        projects = projects.filter((project: any) => project?.id === params.project_id);
+      }
+
+      const spaces = projects.flatMap((project: any) => normalizeSpacesFromProject(project));
+
+      let formatted = format.formatSpaceList(spaces, params.response_format, params.response_mode);
+      let { content, truncated } = format.checkAndTruncate(formatted, spaces.length, {
+        responseMode: params.response_mode,
+        totalItems: spaces.length
+      });
+      let responseModeUsed = params.response_mode;
+
+      if (
+        truncated &&
+        params.response_format === ResponseFormat.MARKDOWN &&
+        params.response_mode === ResponseMode.FULL
+      ) {
+        formatted = format.formatSpaceList(spaces, params.response_format, ResponseMode.COMPACT);
+        const compactResult = format.checkAndTruncate(formatted, spaces.length, {
+          responseMode: ResponseMode.COMPACT,
+          totalItems: spaces.length
+        });
+        content = compactResult.content;
+        truncated = compactResult.truncated;
+        responseModeUsed = ResponseMode.COMPACT;
+      }
+
+      trackToolUsage(TOOL_LIST_SPACES, content);
+      return {
+        content: [{ type: "text", text: content }],
+        structuredContent: params.response_format === ResponseFormat.JSON
+          ? { spaces, truncated, response_mode_used: responseModeUsed }
+          : undefined
+      };
+    } catch (error) {
+      const message = formatError(error);
+      trackToolUsage(TOOL_LIST_SPACES, message, true);
+      return {
+        content: [{ type: "text", text: message }]
+      };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_get_space
+// ============================================================================
+server.registerTool(
+  TOOL_GET_SPACE,
+  {
+    title: "Get Codecks Space",
+    description: `Retrieve a single space from a project by numeric space ID.
+
+Args:
+  - project_id (string): Project ID that owns the space
+  - space_id (number): Numeric space ID within that project
+  - response_format ('markdown' | 'json'): Output format (default: 'markdown')
+
+Returns:
+  Space details including name, icon, default deck type, and owning project.`,
+    inputSchema: schemas.GetSpaceSchema,
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.GetSpaceInput) => {
+    try {
+      const client = getClient();
+
+      const projectSelection: Selection[] = ["id", "name", "visibility", "spaces"];
+      const query = buildIdQuery(schema, "project", [params.project_id], projectSelection);
+      const response = await client.query(query);
+      const project = denormalizeById(
+        schema,
+        response as Record<string, any>,
+        "project",
+        params.project_id,
+        projectSelection
+      );
+
+      if (!project) {
+        const message = `Error: Project with ID '${params.project_id}' not found.`;
+        trackToolUsage(TOOL_GET_SPACE, message, true);
+        return {
+          content: [{ type: "text", text: message }]
+        };
+      }
+
+      const spaces = normalizeSpacesFromProject(project);
+      const space = spaces.find((entry: any) => entry.id === params.space_id);
+
+      if (!space) {
+        const message = `Error: Space ID '${params.space_id}' not found in project '${params.project_id}'.`;
+        trackToolUsage(TOOL_GET_SPACE, message, true);
+        return {
+          content: [{ type: "text", text: message }]
+        };
+      }
+
+      const formatted = format.formatSpace(space, params.response_format);
+      trackToolUsage(TOOL_GET_SPACE, formatted);
+      return {
+        content: [{ type: "text", text: formatted }],
+        structuredContent: params.response_format === ResponseFormat.JSON ? space : undefined
+      };
+    } catch (error) {
+      const message = formatError(error);
+      trackToolUsage(TOOL_GET_SPACE, message, true);
+      return {
+        content: [{ type: "text", text: message }]
+      };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_create_space
+// ============================================================================
+server.registerTool(
+  TOOL_CREATE_SPACE,
+  {
+    title: "Create Codecks Space",
+    description: `Create a new space within an existing project.
+
+Implementation note: this updates the project's \`spaces\` array via \`projects/update\`.
+
+Args:
+  - project_id (string): Project ID that will own the new space
+  - name (string): Space name
+  - icon (string | null, optional): Optional icon slug (e.g., tasks, gdd)
+  - default_deck_type (string): Default deck type for decks in this space (default: task)
+  - session_id (string, optional): Client session ID from web app
+
+Returns:
+  The created space with its numeric \`space_id\` and project context.`,
+    inputSchema: schemas.CreateSpaceSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.CreateSpaceInput) => {
+    try {
+      const client = getClient();
+      const project = await getProjectWithSpaces(client, params.project_id);
+      if (!project) {
+        return {
+          content: [{ type: "text", text: `Error: Project with ID '${params.project_id}' not found.` }]
+        };
+      }
+
+      const rawSpaces = getRawProjectSpaces(project);
+      const nextSpaceId = rawSpaces.reduce((max: number, space: any) => Math.max(max, Number(space?.id) || 0), 0) + 1;
+      const newSpace = {
+        id: nextSpaceId,
+        name: params.name,
+        icon: params.icon ?? null,
+        defaultDeckType: params.default_deck_type
+      };
+
+      const response = await client.dispatch("projects/update", {
+        id: params.project_id,
+        sessionId: params.session_id || undefined,
+        spaces: [...rawSpaces, newSpace]
+      });
+
+      const updatedProject = await getProjectWithSpaces(client, params.project_id);
+      const createdSpace = normalizeSpacesFromProject(updatedProject || project)
+        .find((space: any) => space.id === nextSpaceId);
+
+      return {
+        content: [{ type: "text", text: `Space created successfully with ID ${nextSpaceId}.` }],
+        structuredContent: {
+          space: createdSpace || {
+            ...newSpace,
+            project: { id: project.id, name: project.name, visibility: project.visibility }
+          },
+          response
+        }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(error) }]
+      };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_update_space
+// ============================================================================
+server.registerTool(
+  TOOL_UPDATE_SPACE,
+  {
+    title: "Update Codecks Space",
+    description: `Update an existing space within a project.
+
+Implementation note: this updates the project's \`spaces\` array via \`projects/update\`.
+
+Args:
+  - project_id (string): Project ID that owns the space
+  - space_id (number): Numeric space ID to update
+  - name (string, optional): Updated name
+  - icon (string | null, optional): Updated icon slug, or null to clear
+  - default_deck_type (string, optional): Updated default deck type
+  - session_id (string, optional): Client session ID from web app
+
+Returns:
+  The updated space object with project context.`,
+    inputSchema: schemas.UpdateSpaceSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.UpdateSpaceInput) => {
+    try {
+      const client = getClient();
+      const project = await getProjectWithSpaces(client, params.project_id);
+      if (!project) {
+        return {
+          content: [{ type: "text", text: `Error: Project with ID '${params.project_id}' not found.` }]
+        };
+      }
+
+      const rawSpaces = getRawProjectSpaces(project);
+      const hasTargetSpace = rawSpaces.some((space: any) => Number(space?.id) === params.space_id);
+      if (!hasTargetSpace) {
+        return {
+          content: [{ type: "text", text: `Error: Space ID '${params.space_id}' not found in project '${params.project_id}'.` }]
+        };
+      }
+
+      const nextSpaces = rawSpaces.map((space: any) => {
+        if (Number(space?.id) !== params.space_id) {
+          return space;
+        }
+        const updated = { ...space };
+        if (params.name !== undefined) {
+          updated.name = params.name;
+        }
+        if (params.icon !== undefined) {
+          updated.icon = params.icon;
+        }
+        if (params.default_deck_type !== undefined) {
+          updated.defaultDeckType = params.default_deck_type;
+        }
+        return updated;
+      });
+
+      const response = await client.dispatch("projects/update", {
+        id: params.project_id,
+        sessionId: params.session_id || undefined,
+        spaces: nextSpaces
+      });
+
+      const updatedProject = await getProjectWithSpaces(client, params.project_id);
+      const updatedSpace = normalizeSpacesFromProject(updatedProject || project)
+        .find((space: any) => space.id === params.space_id);
+
+      return {
+        content: [{ type: "text", text: `Space ${params.space_id} updated successfully.` }],
+        structuredContent: {
+          space: updatedSpace || null,
+          response
+        }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(error) }]
+      };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_delete_space
+// ============================================================================
+server.registerTool(
+  TOOL_DELETE_SPACE,
+  {
+    title: "Delete Codecks Space",
+    description: `Delete a space from a project.
+
+Implementation note: this removes an entry from the project's \`spaces\` array via \`projects/update\`.
+
+Args:
+  - project_id (string): Project ID that owns the space
+  - space_id (number): Numeric space ID to delete
+  - session_id (string, optional): Client session ID from web app
+
+Returns:
+  Confirmation and metadata about the deleted space.`,
+    inputSchema: schemas.DeleteSpaceSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.DeleteSpaceInput) => {
+    try {
+      const client = getClient();
+      const project = await getProjectWithSpaces(client, params.project_id);
+      if (!project) {
+        return {
+          content: [{ type: "text", text: `Error: Project with ID '${params.project_id}' not found.` }]
+        };
+      }
+
+      const normalizedBefore = normalizeSpacesFromProject(project);
+      const deletedSpace = normalizedBefore.find((space: any) => space.id === params.space_id);
+      if (!deletedSpace) {
+        return {
+          content: [{ type: "text", text: `Error: Space ID '${params.space_id}' not found in project '${params.project_id}'.` }]
+        };
+      }
+
+      const rawSpaces = getRawProjectSpaces(project);
+      const nextSpaces = rawSpaces.filter((space: any) => Number(space?.id) !== params.space_id);
+
+      const response = await client.dispatch("projects/update", {
+        id: params.project_id,
+        sessionId: params.session_id || undefined,
+        spaces: nextSpaces
+      });
+
+      const updatedProject = await getProjectWithSpaces(client, params.project_id);
+      const remainingSpaces = normalizeSpacesFromProject(updatedProject || { spaces: nextSpaces, ...project });
+
+      return {
+        content: [{ type: "text", text: `Space ${params.space_id} deleted successfully.` }],
+        structuredContent: {
+          deleted_space: deletedSpace,
+          remaining_space_count: remainingSpaces.length,
+          response
+        }
       };
     } catch (error) {
       return {

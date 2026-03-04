@@ -212,6 +212,71 @@ export function formatDeckList(
 }
 
 /**
+ * Format a project space for display
+ */
+export function formatSpace(space: any, format: ResponseFormat): string {
+  if (format === ResponseFormat.JSON) {
+    return JSON.stringify(space, null, 2);
+  }
+
+  const lines = [
+    `# ${space.name || "(Untitled Space)"}`,
+    "",
+    `**Space ID**: ${space.id}`
+  ];
+
+  if (space.project) {
+    lines.push(`**Project**: ${space.project.name || space.project.id || space.project}`);
+  }
+
+  if (space.icon !== undefined) {
+    lines.push(`**Icon**: ${space.icon ?? "none"}`);
+  }
+
+  if (space.defaultDeckType) {
+    lines.push(`**Default Deck Type**: ${space.defaultDeckType}`);
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Format spaces for listing
+ */
+export function formatSpaceList(
+  spaces: any[],
+  format: ResponseFormat,
+  responseMode: ResponseMode = ResponseMode.FULL
+): string {
+  if (format === ResponseFormat.JSON) {
+    return JSON.stringify({ spaces }, null, 2);
+  }
+
+  const lines = ["# Spaces", ""];
+
+  for (const space of spaces) {
+    const name = space.name || "(Untitled Space)";
+    const project = space.project?.name || space.project?.id || space.project;
+    const icon = space.icon ?? "none";
+    const defaultDeckType = space.defaultDeckType || "unknown";
+    if (responseMode === ResponseMode.COMPACT) {
+      lines.push(`- ${name} (space ${space.id}) — project: ${project || "unknown"}, icon: ${icon}, default deck: ${defaultDeckType}`);
+      continue;
+    }
+    lines.push(`## ${name}`);
+    lines.push(`- **Space ID**: ${space.id}`);
+    if (project) {
+      lines.push(`- **Project**: ${project}`);
+    }
+    lines.push(`- **Icon**: ${icon}`);
+    lines.push(`- **Default Deck Type**: ${defaultDeckType}`);
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
+/**
  * Format projects for listing
  */
 export function formatProjectList(

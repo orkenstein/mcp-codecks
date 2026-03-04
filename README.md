@@ -29,6 +29,7 @@ This starts the MCP server over stdio (default transport).
 }
 ```
 
+
 ### Warp Oz Cloud Agent (`--mcp` inline JSON)
 
 ```bash
@@ -43,6 +44,7 @@ MCP (Model Context Protocol) server for integrating with [Codecks](https://www.c
 
 - **Card Management**: List, retrieve, and create cards with full metadata
 - **Deck Operations**: List and view decks across projects
+- **Space Discovery**: List spaces and inspect a specific space by project
 - **Project Management**: List all projects in your organization
 - **Milestone Tracking**: View and manage milestones
 - **User Information**: Get current authenticated user details
@@ -136,6 +138,11 @@ Tool names use snake_case model names (e.g., `codecks_list_account_user_setting`
 - `codecks_get_deck` - Get detailed information about a specific deck
 - `codecks_create_deck` - Create a new deck in a project
 - `codecks_add_decks_to_space_after` - Reorder decks within a space
+- `codecks_list_spaces` - List spaces across projects (or for one project) with `space_id`, icon, and default deck type
+- `codecks_get_space` - Get one space by `project_id` + numeric `space_id`
+- `codecks_create_space` - Create a space in a project (uses `projects/update` under the hood)
+- `codecks_update_space` - Rename/change icon/default deck type for a space
+- `codecks_delete_space` - Delete a space from a project
 
 ### Project & Milestone Operations
 
@@ -186,6 +193,30 @@ Tool names use snake_case model names (e.g., `codecks_list_account_user_setting`
     "user_id": "your-user-id",
     "space_id": 1,
     "deck_type": "hero"
+  }
+}
+```
+
+### List spaces in a project
+```typescript
+{
+  "name": "codecks_list_spaces",
+  "arguments": {
+    "project_id": "your-project-id",
+    "response_format": "json"
+  }
+}
+```
+
+### Create a space in a project
+```typescript
+{
+  "name": "codecks_create_space",
+  "arguments": {
+    "project_id": "your-project-id",
+    "name": "QA",
+    "icon": null,
+    "default_deck_type": "task"
   }
 }
 ```
