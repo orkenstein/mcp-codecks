@@ -7,7 +7,9 @@ import {
   formatDeckList,
   formatMilestone,
   formatMilestoneList,
-  formatProjectList
+  formatProjectList,
+  formatSpace,
+  formatSpaceList
 } from "../../src/utils/format.js";
 import { ResponseFormat, ResponseMode } from "../../src/types.js";
 
@@ -182,6 +184,30 @@ describe("format utilities", () => {
 
     const milestones = [{ id: "m1", name: "M1" }];
     expect(formatMilestoneList(milestones, ResponseFormat.JSON)).toContain("\"milestones\"");
+  });
+
+  it("formats spaces in markdown and compact list modes", () => {
+    const space = {
+      id: 1,
+      name: "Production",
+      icon: "tasks",
+      defaultDeckType: "task",
+      project: { id: "p1", name: "Core" }
+    };
+    const single = formatSpace(space, ResponseFormat.MARKDOWN);
+    expect(single).toContain("# Production");
+    expect(single).toContain("**Space ID**: 1");
+    expect(single).toContain("**Project**: Core");
+
+    const compact = formatSpaceList([space], ResponseFormat.MARKDOWN, ResponseMode.COMPACT);
+    expect(compact).toContain("Production (space 1)");
+    expect(compact).toContain("default deck: task");
+  });
+
+  it("formats spaces as json", () => {
+    const spaces = [{ id: 2, name: "QA", icon: null, defaultDeckType: "task" }];
+    expect(formatSpace(spaces[0], ResponseFormat.JSON)).toContain("\"name\"");
+    expect(formatSpaceList(spaces, ResponseFormat.JSON)).toContain("\"spaces\"");
   });
 
   it("truncates output exceeding character limit", () => {
