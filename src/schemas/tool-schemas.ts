@@ -130,6 +130,21 @@ export const AddDecksToSpaceAfterSchema = z.object({
   target_space_id: z.number().int().describe("Target space ID"),
   session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
 }).strict();
+
+export const UpdateDeckSchema = z.object({
+  deck_id: z.string().describe("Deck ID to update"),
+  title: z.string().min(1).optional().describe("Updated deck title"),
+  deck_type: z.string().optional().describe("Updated deck type (e.g. hero, mixed, task)"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
+}).strict().refine(
+  (value) => Boolean(value.title !== undefined || value.deck_type !== undefined),
+  { message: "Provide at least one field to update (title or deck_type)." }
+);
+
+export const DeleteDeckSchema = z.object({
+  deck_id: z.string().describe("Deck ID to delete/archive"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
+}).strict();
 // Space schemas
 export const ListSpacesSchema = z.object({
   project_id: z.string().optional().describe("Filter by specific project ID"),
@@ -369,6 +384,8 @@ export type ListDecksInput = z.infer<typeof ListDecksSchema>;
 export type GetDeckInput = z.infer<typeof GetDeckSchema>;
 export type CreateDeckInput = z.infer<typeof CreateDeckSchema>;
 export type AddDecksToSpaceAfterInput = z.infer<typeof AddDecksToSpaceAfterSchema>;
+export type UpdateDeckInput = z.infer<typeof UpdateDeckSchema>;
+export type DeleteDeckInput = z.infer<typeof DeleteDeckSchema>;
 export type ListSpacesInput = z.infer<typeof ListSpacesSchema>;
 export type GetSpaceInput = z.infer<typeof GetSpaceSchema>;
 export type CreateSpaceInput = z.infer<typeof CreateSpaceSchema>;

@@ -137,6 +137,8 @@ Tool names use snake_case model names (e.g., `codecks_list_account_user_setting`
 - `codecks_list_decks` - List all decks, optionally filtered by project (`response_mode`: `compact`/`full`)
 - `codecks_get_deck` - Get detailed information about a specific deck
 - `codecks_create_deck` - Create a new deck in a project
+- `codecks_update_deck` - Update deck title and/or deck type
+- `codecks_delete_deck` - Delete/archive a deck
 - `codecks_add_decks_to_space_after` - Reorder decks within a space
 - `codecks_list_spaces` - List spaces across projects (or for one project) with `space_id`, icon, and default deck type
 - `codecks_get_space` - Get one space by `project_id` + numeric `space_id`
@@ -192,6 +194,18 @@ Tool names use snake_case model names (e.g., `codecks_list_account_user_setting`
     "project_id": "your-project-id",
     "user_id": "your-user-id",
     "space_id": 1,
+    "deck_type": "hero"
+  }
+}
+```
+
+### Rename a deck and change its type
+```typescript
+{
+  "name": "codecks_update_deck",
+  "arguments": {
+    "deck_id": "your-deck-id",
+    "title": "Gameplay Systems",
     "deck_type": "hero"
   }
 }

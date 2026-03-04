@@ -49,6 +49,8 @@ const TOOL_LIST_DECKS = "codecks_list_decks";
 const TOOL_GET_DECK = "codecks_get_deck";
 const TOOL_CREATE_DECK = "codecks_create_deck";
 const TOOL_ADD_DECKS_TO_SPACE = "codecks_add_decks_to_space_after";
+const TOOL_UPDATE_DECK = "codecks_update_deck";
+const TOOL_DELETE_DECK = "codecks_delete_deck";
 const TOOL_LIST_SPACES = "codecks_list_spaces";
 const TOOL_GET_SPACE = "codecks_get_space";
 const TOOL_CREATE_SPACE = "codecks_create_space";
@@ -89,6 +91,8 @@ const manualTools = new Set<string>([
   TOOL_GET_DECK,
   TOOL_CREATE_DECK,
   TOOL_ADD_DECKS_TO_SPACE,
+  TOOL_UPDATE_DECK,
+  TOOL_DELETE_DECK,
   TOOL_LIST_SPACES,
   TOOL_GET_SPACE,
   TOOL_CREATE_SPACE,
@@ -1635,6 +1639,133 @@ Returns:
       return {
         content: [{ type: "text", text: "Decks reordered successfully." }],
         structuredContent: response
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(error) }]
+      };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_update_deck
+// ============================================================================
+server.registerTool(
+  TOOL_UPDATE_DECK,
+  {
+    title: "Update Codecks Deck",
+    description: `Update mutable deck fields.
+
+Args:
+  - deck_id (string): Deck ID to update
+  - title (string, optional): Updated deck title
+  - deck_type (string, optional): Updated deck type (e.g., hero, mixed, task)
+  - session_id (string, optional): Client session ID from web app
+
+Returns:
+  Dispatch metadata and refreshed deck details.`,
+    inputSchema: schemas.UpdateDeckSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.UpdateDeckInput) => {
+    try {
+      const client = getClient();
+      const data = {
+        id: params.deck_id,
+        title: params.title,
+        deckType: params.deck_type,
+        sessionId: params.session_id || undefined
+      };
+
+      const response = await client.dispatch("decks/update", data);
+
+      const deckSelection: Selection[] = [
+        "id",
+        "title",
+        "deckType",
+        "spaceId",
+        "isDeleted",
+        { project: ["id", "name"] }
+      ];
+      const query = buildIdQuery(schema, "deck", [params.deck_id], deckSelection);
+      const refreshed = await client.query(query);
+      const deck = denormalizeById(
+        schema,
+        refreshed as Record<string, any>,
+        "deck",
+        params.deck_id,
+        deckSelection
+      );
+
+      return {
+        content: [{ type: "text", text: "Deck updated successfully." }],
+        structuredContent: {
+          deck,
+          response
+        }
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(error) }]
+      };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_delete_deck
+// ============================================================================
+server.registerTool(
+  TOOL_DELETE_DECK,
+  {
+    title: "Delete Codecks Deck",
+    description: `Delete/archive a deck by ID.
+
+Args:
+  - deck_id (string): Deck ID to delete/archive
+  - session_id (string, optional): Client session ID from web app
+
+Returns:
+  Dispatch metadata and post-delete deck state (including isDeleted when available).`,
+    inputSchema: schemas.DeleteDeckSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.DeleteDeckInput) => {
+    try {
+      const client = getClient();
+      const response = await client.dispatch("decks/delete", {
+        id: params.deck_id,
+        sessionId: params.session_id || undefined
+      });
+
+      const deckSelection: Selection[] = ["id", "title", "deckType", "spaceId", "isDeleted"];
+      const query = buildIdQuery(schema, "deck", [params.deck_id], deckSelection);
+      const refreshed = await client.query(query);
+      const deck = denormalizeById(
+        schema,
+        refreshed as Record<string, any>,
+        "deck",
+        params.deck_id,
+        deckSelection
+      );
+
+      return {
+        content: [{ type: "text", text: "Deck deleted successfully." }],
+        structuredContent: {
+          deck,
+          response
+        }
       };
     } catch (error) {
       return {

@@ -12,6 +12,7 @@ import {
   CreateProjectSchema,
   DeleteMilestoneSchema,
   DeleteSpaceSchema,
+  DeleteDeckSchema,
   DeleteCardSchema,
   ListCardsSchema,
   ListDecksSchema,
@@ -32,6 +33,7 @@ import {
   UnsubscribeDeckSchema,
   UpdateMilestoneSchema,
   UpdateSpaceSchema,
+  UpdateDeckSchema,
   UpvoteCardSchema
 } from "../../src/schemas/tool-schemas.js";
 
@@ -75,6 +77,13 @@ describe("tool schemas", () => {
       target_space_id: 1
     };
     expect(() => AddDecksToSpaceAfterSchema.parse(value)).not.toThrow();
+  });
+
+  it("validates update/delete deck inputs", () => {
+    expect(() => UpdateDeckSchema.parse({ deck_id: "deck-1", title: "Renamed" })).not.toThrow();
+    expect(() => UpdateDeckSchema.parse({ deck_id: "deck-1", deck_type: "hero" })).not.toThrow();
+    expect(() => UpdateDeckSchema.parse({ deck_id: "deck-1" })).toThrow();
+    expect(() => DeleteDeckSchema.parse({ deck_id: "deck-1" })).not.toThrow();
   });
 
   it("validates space read inputs", () => {
