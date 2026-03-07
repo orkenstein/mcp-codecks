@@ -45,6 +45,7 @@ const TOOL_GET_CARD = "codecks_get_card";
 const TOOL_DELETE_CARD = "codecks_delete_card";
 const TOOL_CREATE_CARD = "codecks_create_card";
 const TOOL_BULK_UPDATE_CARDS = "codecks_bulk_update_cards";
+const TOOL_UPDATE_CARD = "codecks_update_card";
 const TOOL_LIST_DECKS = "codecks_list_decks";
 const TOOL_GET_DECK = "codecks_get_deck";
 const TOOL_CREATE_DECK = "codecks_create_deck";
@@ -87,6 +88,7 @@ const manualTools = new Set<string>([
   TOOL_DELETE_CARD,
   TOOL_CREATE_CARD,
   TOOL_BULK_UPDATE_CARDS,
+  TOOL_UPDATE_CARD,
   TOOL_LIST_DECKS,
   TOOL_GET_DECK,
   TOOL_CREATE_DECK,
@@ -1363,6 +1365,125 @@ Returns:
       return {
         content: [{ type: "text", text: "Cards updated successfully." }],
         structuredContent: response
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: formatError(error) }]
+      };
+    }
+  }
+);
+
+// ============================================================================
+// TOOL: codecks_update_card
+// ============================================================================
+server.registerTool(
+  TOOL_UPDATE_CARD,
+  {
+    title: "Update Codecks Card",
+    description: `Update a single card's workflow fields.
+
+Uses the same mutation path as bulk updates but scoped to one card.
+
+Args:
+  - card_id (string): Card ID to update
+  - status (string, optional): Updated workflow status
+  - deck_id (string, optional): Move card to the specified deck ID
+  - milestone_id (string, optional): Assign card to the specified milestone ID
+  - content (string, optional): Updated card content/body
+  - assignee_id (string | null, optional): Updated assignee user ID; null clears assignee
+  - session_id (string, optional): Client session ID from web app
+
+Returns:
+  API response payload with update results and best-effort refreshed card data.`,
+    inputSchema: schemas.UpdateCardSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
+    }
+  },
+  async (params: schemas.UpdateCardInput) => {
+    try {
+      const client = getClient();
+      const responses: Record<string, unknown> = {};
+      let applied = 0;
+
+      const workflowData: Record<string, unknown> = {
+        sessionId: params.session_id || undefined,
+        ids: [params.card_id]
+      };
+
+      if (params.status) {
+        workflowData.status = params.status;
+      }
+      if (params.deck_id) {
+        workflowData.deckId = params.deck_id;
+      }
+      if (params.milestone_id) {
+        workflowData.milestoneId = params.milestone_id;
+      }
+
+      if (params.status || params.deck_id || params.milestone_id) {
+        responses.workflow_update = await client.dispatch("cards/bulkUpdate", workflowData);
+        applied += 1;
+      }
+
+      if (params.content !== undefined || params.assignee_id !== undefined) {
+        const directData: Record<string, unknown> = {
+          id: params.card_id,
+          sessionId: params.session_id || undefined
+        };
+        if (params.content !== undefined) {
+          directData.content = params.content;
+        }
+        if (params.assignee_id !== undefined) {
+          directData.assigneeId = params.assignee_id;
+        }
+        responses.content_or_assignee_update = await client.dispatch("cards/update", directData);
+        applied += 1;
+      }
+
+      const cardSelection: Selection[] = [
+        "id",
+        "accountSeq",
+        "title",
+        "derivedStatus",
+        "visibility",
+        "effort",
+        "priority",
+        "createdAt",
+        "lastUpdatedAt",
+        { deck: ["id", "title"] },
+        { milestone: ["id", "name"] },
+        { assignee: ["id", "name"] }
+      ];
+      let card: Record<string, any> | null = null;
+      try {
+        const query = buildIdQuery(schema, "card", [params.card_id], cardSelection);
+        const refreshed = await client.query(query);
+        card = denormalizeById(
+          schema,
+          refreshed as Record<string, any>,
+          "card",
+          params.card_id,
+          cardSelection
+        ) as Record<string, any> | null;
+        if (card) {
+          card = normalizeCardId(card, params.card_id);
+        }
+      } catch {
+        // Non-fatal: dispatch already succeeded.
+      }
+
+      return {
+        content: [{ type: "text", text: `Card updated successfully (${applied} operation${applied === 1 ? "" : "s"}).` }],
+        structuredContent: {
+          card_id: params.card_id,
+          responses,
+          card
+        }
       };
     } catch (error) {
       return {

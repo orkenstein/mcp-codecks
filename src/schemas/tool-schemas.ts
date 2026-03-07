@@ -58,6 +58,24 @@ export const BulkUpdateCardsSchema = z.object({
   (value) => Boolean(value.status || value.deck_id || value.milestone_id),
   { message: "Provide at least one of status, deck_id, or milestone_id." }
 );
+export const UpdateCardSchema = z.object({
+  card_id: z.string().describe("Card ID to update"),
+  status: CardStatusSchema.optional().describe("Updated workflow status"),
+  deck_id: z.string().optional().describe("Move card to the specified deck ID"),
+  milestone_id: z.string().optional().describe("Assign card to the specified milestone ID"),
+  content: z.string().optional().describe("Updated card content/body (first line is rendered as title in Codecks UI)"),
+  assignee_id: z.string().nullable().optional().describe("Assign card to user ID; set null to clear assignee"),
+  session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
+}).strict().refine(
+  (value) => Boolean(
+    value.status ||
+    value.deck_id ||
+    value.milestone_id ||
+    value.content !== undefined ||
+    value.assignee_id !== undefined
+  ),
+  { message: "Provide at least one updatable field: status, deck_id, milestone_id, content, or assignee_id." }
+);
 
 export const GetCardSchema = z.object({
   card_id: z.string().describe("The card ID to retrieve"),
@@ -380,6 +398,7 @@ export type GetCardInput = z.infer<typeof GetCardSchema>;
 export type DeleteCardInput = z.infer<typeof DeleteCardSchema>;
 export type CreateCardInput = z.infer<typeof CreateCardSchema>;
 export type BulkUpdateCardsInput = z.infer<typeof BulkUpdateCardsSchema>;
+export type UpdateCardInput = z.infer<typeof UpdateCardSchema>;
 export type ListDecksInput = z.infer<typeof ListDecksSchema>;
 export type GetDeckInput = z.infer<typeof GetDeckSchema>;
 export type CreateDeckInput = z.infer<typeof CreateDeckSchema>;

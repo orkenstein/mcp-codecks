@@ -4,6 +4,7 @@ import {
   AddToHandSchema,
   AddToQueueSchema,
   BulkUpdateCardsSchema,
+  UpdateCardSchema,
   CreateMilestoneProjectSchema,
   CreateMilestoneSchema,
   CreateSpaceSchema,
@@ -44,6 +45,13 @@ describe("tool schemas", () => {
     expect(() => BulkUpdateCardsSchema.parse({ ids: ["a"], deck_id: "deck1" })).not.toThrow();
     expect(() => BulkUpdateCardsSchema.parse({ ids: ["a"], milestone_id: "ms1" })).not.toThrow();
     expect(() => BulkUpdateCardsSchema.parse({ ids: ["a"] })).toThrow();
+    expect(() => UpdateCardSchema.parse({ card_id: "a", status: "done" })).not.toThrow();
+    expect(() => UpdateCardSchema.parse({ card_id: "a", deck_id: "deck1" })).not.toThrow();
+    expect(() => UpdateCardSchema.parse({ card_id: "a", milestone_id: "ms1" })).not.toThrow();
+    expect(() => UpdateCardSchema.parse({ card_id: "a", content: "Updated content" })).not.toThrow();
+    expect(() => UpdateCardSchema.parse({ card_id: "a", assignee_id: "user-1" })).not.toThrow();
+    expect(() => UpdateCardSchema.parse({ card_id: "a", assignee_id: null })).not.toThrow();
+    expect(() => UpdateCardSchema.parse({ card_id: "a" })).toThrow();
   });
 
   it("accepts API-driven card status values for list filters", () => {
