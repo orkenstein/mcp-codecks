@@ -1291,8 +1291,31 @@ Error Handling:
         (payload && typeof payload.cardId === "string" ? payload.cardId : undefined) ||
         (payload && typeof payload.id === "string" ? payload.id : undefined) ||
         (card && typeof card.id === "string" ? card.id : undefined);
+      let childLinksApplied = false;
+      let childLinksError: string | undefined;
+      if (createdCardId && params.child_cards && params.child_cards.length > 0) {
+        try {
+          await client.dispatch("cards/update", {
+            id: createdCardId,
+            childCards: params.child_cards,
+            sessionId: params.session_id || undefined
+          });
+          childLinksApplied = true;
+        } catch (error) {
+          childLinksError = formatError(error);
+        }
+      }
+
       const successText = createdCardId
-        ? `Card created successfully! ID: ${createdCardId}`
+        ? `Card created successfully! ID: ${createdCardId}${
+            params.child_cards && params.child_cards.length > 0
+              ? childLinksApplied
+                ? " Child links applied."
+                : childLinksError
+                  ? ` Warning: child link assignment failed (${childLinksError}).`
+                  : ""
+              : ""
+          }`
         : "Card created successfully, but no card ID was returned by the API response.";
 
       return {
@@ -1302,6 +1325,15 @@ Error Handling:
         }],
         structuredContent: {
           ...responseRecord,
+          ...(params.child_cards && params.child_cards.length > 0
+            ? {
+                childLinks: {
+                  requested: params.child_cards,
+                  applied: childLinksApplied,
+                  error: childLinksError
+                }
+              }
+            : {}),
           ...(createdCardId ? { cardId: createdCardId } : {})
         }
       };
@@ -1391,6 +1423,7 @@ Args:
   - deck_id (string, optional): Move card to the specified deck ID
   - milestone_id (string, optional): Assign card to the specified milestone ID
   - parent_card_id (string | null, optional): Link card to a parent card ID; null unlinks parent
+  - child_cards (string[], optional): Set/replace child card IDs on this card (use [] to clear all children)
   - content (string, optional): Updated card content/body
   - assignee_id (string | null, optional): Updated assignee user ID; null clears assignee
   - session_id (string, optional): Client session ID from web app
@@ -1434,7 +1467,8 @@ Returns:
       if (
         params.content !== undefined ||
         params.assignee_id !== undefined ||
-        params.parent_card_id !== undefined
+        params.parent_card_id !== undefined ||
+        params.child_cards !== undefined
       ) {
         const directData: Record<string, unknown> = {
           id: params.card_id,
@@ -1448,6 +1482,9 @@ Returns:
         }
         if (params.parent_card_id !== undefined) {
           directData.parentCardId = params.parent_card_id;
+        }
+        if (params.child_cards !== undefined) {
+          directData.childCards = params.child_cards;
         }
         responses.direct_update = await client.dispatch("cards/update", directData);
         applied += 1;

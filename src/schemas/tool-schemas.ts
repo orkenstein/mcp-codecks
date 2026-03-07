@@ -64,6 +64,7 @@ export const UpdateCardSchema = z.object({
   deck_id: z.string().optional().describe("Move card to the specified deck ID"),
   milestone_id: z.string().optional().describe("Assign card to the specified milestone ID"),
   parent_card_id: z.string().nullable().optional().describe("Parent card ID; set null to unlink from current parent"),
+  child_cards: z.array(z.string()).optional().describe("Set/replace child card IDs for this card; use [] to clear all children"),
   content: z.string().optional().describe("Updated card content/body (first line is rendered as title in Codecks UI)"),
   assignee_id: z.string().nullable().optional().describe("Assign card to user ID; set null to clear assignee"),
   session_id: z.string().optional().describe("[DEPRECATED] Client session ID - not required for MCP usage")
@@ -73,10 +74,11 @@ export const UpdateCardSchema = z.object({
     value.deck_id ||
     value.milestone_id ||
     value.parent_card_id !== undefined ||
+    value.child_cards !== undefined ||
     value.content !== undefined ||
     value.assignee_id !== undefined
   ),
-  { message: "Provide at least one updatable field: status, deck_id, milestone_id, parent_card_id, content, or assignee_id." }
+  { message: "Provide at least one updatable field: status, deck_id, milestone_id, parent_card_id, child_cards, content, or assignee_id." }
 );
 
 export const GetCardSchema = z.object({
